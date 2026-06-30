@@ -520,34 +520,207 @@ class ReadData(object):
 
     def load_hdf(self,):
         """
-        This function reads out h5 files. At the moment (20230614) only ESRF is
-        providing their measurement data in an h5 file for the user. So only
-        ESRF h5 format is supported. If more facilities are providing h5 files
-        either a standard form is given or the facility has to be automatically 
-        determined and a adapted procedure has to be developed.
+        This function reads out h5/hdf5/nxs/nexus files.
+
+        Original supported structure:
+            /<scan_number>/measurement/energy_cenc
+            /<scan_number>/measurement/mu_trans_ref
+            /<scan_number>/measurement/mu_trans
+
+        Real refXAS compatibility improvement:
+        - Keep the original ESRF-style reader.
+        - If the expected scan path such as '1.1' does not exist, do not crash.
+        - Inspect available numeric 1D datasets inside the HDF5/Nexus file.
+        - Try to detect energy and mu-like arrays by dataset names.
+        - If only two numeric arrays exist, use them as a fallback preview.
+        - Store detected HDF5/Nexus paths in metadata for verification.
         """
-        # first check if a scan number is provided. If not set it to default
-        # '1.1'
-        self.header = ""
+        self.header = []
+        self.beamline = self.beamline or "HDF5/Nexus"
 
         if type(self.scan_number) == int:
             self.scan_number = '1.1'
             if self.verbose:
                 print('No scan number for hdf5 files provided, setting to default 1.1')
-        # now open the h5 and retrieve the measurement data
+
+        numeric_datasets = {}
+
+        def _collect_numeric_datasets(name, obj):
+            """
+            Collect numeric 1D datasets from the HDF5/Nexus file.
+            """
+            try:
+                if isinstance(obj, h5py.Dataset):
+                    shape = getattr(obj, "shape", None)
+                    dtype = getattr(obj, "dtype", None)
+
+                    if shape and len(shape) == 1 and shape[0] > 1 and np.issubdtype(dtype, np.number):
+                        numeric_datasets[name] = obj[()]
+                        self.header.append(f"{name} Dataset {shape}")
+            except Exception as exc:
+                if self.verbose:
+                    print(f"Skipping HDF5 dataset {name}: {exc}")
+
+        def _find_dataset_by_keywords(keywords, exclude_path=None):
+            """
+            Find the first numeric dataset whose path/name contains one of the
+            requested keywords.
+            """
+            for path, values in numeric_datasets.items():
+                path_lower = path.lower()
+
+                if exclude_path and path == exclude_path:
+                    continue
+
+                for keyword in keywords:
+                    if keyword in path_lower:
+                        return path, values
+
+            return None, None
+
         with h5py.File(self.data_path, 'r') as f:
-            self.h5_energy = f[self.scan_number]['measurement']['energy_cenc'][()]
-            self.h5_mu_ref = f[self.scan_number]['measurement']['mu_trans_ref'][()]
-            self.h5_mu = f[self.scan_number]['measurement']['mu_trans'][()]
+            # -----------------------------------------------------------------
+            # 1) Original ESRF-style structure support
+            # -----------------------------------------------------------------
+            try:
+                if (
+                    self.scan_number in f
+                    and 'measurement' in f[self.scan_number]
+                    and 'energy_cenc' in f[self.scan_number]['measurement']
+                    and 'mu_trans_ref' in f[self.scan_number]['measurement']
+                    and 'mu_trans' in f[self.scan_number]['measurement']
+                ):
+                    self.h5_energy = f[self.scan_number]['measurement']['energy_cenc'][()]
+                    self.h5_mu_ref = f[self.scan_number]['measurement']['mu_trans_ref'][()]
+                    self.h5_mu = f[self.scan_number]['measurement']['mu_trans'][()]
+
+                    self.header = [
+                        f"{self.scan_number}/measurement/energy_cenc",
+                        f"{self.scan_number}/measurement/mu_trans_ref",
+                        f"{self.scan_number}/measurement/mu_trans",
+                    ]
+
+                else:
+                    raise KeyError(
+                        f"Expected ESRF-style scan path '{self.scan_number}/measurement' was not found."
+                    )
+
+            except Exception as original_hdf_error:
+                if self.verbose:
+                    print(f"Original ESRF-style HDF5 reader failed: {original_hdf_error}")
+                    print("Trying Real refXAS generic HDF5/Nexus dataset detection...")
+
+                # -------------------------------------------------------------
+                # 2) Generic HDF5/Nexus fallback reader
+                # -------------------------------------------------------------
+                f.visititems(_collect_numeric_datasets)
+
+                if len(numeric_datasets) < 2:
+                    available_paths = ", ".join(numeric_datasets.keys()) or "none"
+
+                    raise ValueError(
+                        "This HDF5/Nexus file was opened, but Real refXAS could "
+                        "not find enough numeric 1D datasets for XAS quality control. "
+                        f"Available numeric datasets: {available_paths}. "
+                        "Please upload an exported .xdi, .dat, .txt or .csv file, "
+                        "or provide a Nexus/HDF5 file containing readable energy and mu/intensity arrays."
+                    )
+
+                energy_keywords = [
+                    "energy_cenc",
+                    "energy_enc",
+                    "mono_energy",
+                    "mono_pos_defined",
+                    "zapenergy",
+                    "eneenc",
+                    "energy",
+                    "e_enc",
+                    "mono",
+                    "theta",
+                ]
+
+                mu_keywords = [
+                    "mu_trans_ref",
+                    "mu_trans",
+                    "mu_ref",
+                    "mu",
+                    "xmu",
+                    "normalized",
+                    "absorption",
+                    "absorbance",
+                    "transmission",
+                    "fluorescence",
+                    "ifluo",
+                    "i1",
+                    "it",
+                    "position",
+                ]
+
+                energy_path, self.h5_energy = _find_dataset_by_keywords(energy_keywords)
+                mu_path, self.h5_mu = _find_dataset_by_keywords(mu_keywords, exclude_path=energy_path)
+
+                # If keyword detection fails, use first two compatible numeric arrays
+                # as a fallback preview. This prevents an internal server error and
+                # allows curator/user inspection.
+                if self.h5_energy is None or self.h5_mu is None:
+                    dataset_items = list(numeric_datasets.items())
+                    energy_path, self.h5_energy = dataset_items[0]
+                    mu_path, self.h5_mu = dataset_items[1]
+
+                self.h5_mu_ref = self.h5_mu
+
+                self.meta_data_dict["HDF5/Nexus Reader"] = "Generic Real refXAS fallback reader"
+                self.meta_data_dict["HDF5 Energy Path"] = energy_path
+                self.meta_data_dict["HDF5 Mu Path"] = mu_path
+                self.meta_data_dict["HDF5 Warning"] = (
+                    "Generic HDF5/Nexus fallback was used. Please verify that the "
+                    "selected energy and mu/intensity paths are scientifically correct."
+                )
+
+        self.h5_energy = np.asarray(self.h5_energy, dtype=float)
+        self.h5_mu_ref = np.asarray(self.h5_mu_ref, dtype=float)
+        self.h5_mu = np.asarray(self.h5_mu, dtype=float)
+
+        min_length = min(len(self.h5_energy), len(self.h5_mu_ref), len(self.h5_mu))
+
+        if min_length < 2:
+            raise ValueError(
+                "This HDF5/Nexus file does not contain enough readable data points "
+                "for Real refXAS quality control."
+            )
+
+        self.h5_energy = self.h5_energy[:min_length]
+        self.h5_mu_ref = self.h5_mu_ref[:min_length]
+        self.h5_mu = self.h5_mu[:min_length]
+
         # check if energy is in eV
         self.h5_energy = self.keV2eV(self.h5_energy)
-        # convert data to numpy array with [energy, mu]
-        self.data = np.array([self.h5_energy,
-                              self.h5_mu_ref,
-                              self.h5_mu])
+
+        # sort energy axis
+        energy_sorted_idx = self.h5_energy.argsort()
+        self.h5_energy = self.h5_energy[energy_sorted_idx]
+        self.h5_mu_ref = self.h5_mu_ref[energy_sorted_idx]
+        self.h5_mu = self.h5_mu[energy_sorted_idx]
+
+        # clean numerical values
+        self.h5_energy = np.nan_to_num(self.h5_energy, posinf=0, neginf=0)
+        self.h5_mu_ref = np.nan_to_num(self.h5_mu_ref, posinf=0, neginf=0)
+        self.h5_mu = np.nan_to_num(self.h5_mu, posinf=0, neginf=0)
+
+        # convert data to numpy array with [energy, mu_reference, mu_sample]
+        self.data = np.array([
+            self.h5_energy,
+            self.h5_mu_ref,
+            self.h5_mu,
+        ])
+
         # set e-range
-        self.meta_data_dict['E_range_min'] = np.round(self.data[0,0], decimals=1)
-        self.meta_data_dict['E_range_max'] = np.round(self.data[0,-1], decimals=1)
+        self.meta_data_dict['Header'] = self.header
+        self.meta_data_dict['Header_str'] = '\n'.join(self.header)
+        self.meta_data_dict['Beamline'] = self.beamline
+        self.meta_data_dict['E_range_min'] = np.round(self.data[0, 0], decimals=1)
+        self.meta_data_dict['E_range_max'] = np.round(self.data[0, -1], decimals=1)
+
         # create raw plot
         self.create_raw_plot_base64()
 

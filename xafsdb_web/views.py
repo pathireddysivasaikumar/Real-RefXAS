@@ -1325,3 +1325,251 @@ def team_contact(request) -> HttpResponse:
 
     return render(request, "landing/team_contact.html", context)
 
+
+
+# -----------------------------------------------------------------------------
+# Real refXAS robust filename detector safe override
+# Purpose:
+#   Improve Element / Edge auto-selection for .h5, .hdf5, .nxs and .nexus files.
+#
+# Examples:
+#   PtO2_0001.hdf5              -> Element Pt, Edge L3
+#   PtO2_0001.nxs               -> Element Pt, Edge L3
+#   Ti-foil_K-edge_293K.dat     -> Element Ti, Edge K
+#   Co_foil_Co_K_0000.xdi       -> Element Co, Edge K
+#   Au foil_Au L3_180.xdi       -> Element Au, Edge L3
+# -----------------------------------------------------------------------------
+
+import re as _real_refxas_safe_re
+from pathlib import Path as _RealRefXASSafePath
+
+_REAL_REFXAS_SAFE_ELEMENTS = [
+    "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
+    "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
+    "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
+    "Ga", "Ge", "As", "Se", "Br", "Kr",
+    "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
+    "In", "Sn", "Sb", "Te", "I", "Xe",
+    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy",
+    "Ho", "Er", "Tm", "Yb", "Lu",
+    "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
+    "Tl", "Pb", "Bi", "Po", "At", "Rn",
+    "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu",
+]
+
+_REAL_REFXAS_SAFE_ELEMENT_SET = set(_REAL_REFXAS_SAFE_ELEMENTS)
+_REAL_REFXAS_SAFE_ATOMIC_NUMBER = {
+    symbol: index + 1 for index, symbol in enumerate(_REAL_REFXAS_SAFE_ELEMENTS)
+}
+
+
+def _real_refxas_normalize_element_symbol(value):
+    if not value:
+        return ""
+
+    value = str(value).strip()
+    value = value.replace("_", " ").replace("-", " ")
+    token = value.split()[0] if value.split() else value
+
+    for length in (2, 1):
+        candidate = token[:length]
+
+        if not candidate:
+            continue
+
+        normalized = candidate[0].upper() + candidate[1:].lower()
+
+        if normalized in _REAL_REFXAS_SAFE_ELEMENT_SET:
+            return normalized
+
+    return ""
+
+
+def _real_refxas_default_edge_for_element(element):
+    if not element:
+        return ""
+
+    z_number = _REAL_REFXAS_SAFE_ATOMIC_NUMBER.get(element)
+
+    if not z_number:
+        return ""
+
+    # Heavy elements usually use L edges in common XAS examples.
+    if z_number >= 57:
+        return "L3"
+
+    return "K"
+
+
+def _real_refxas_detect_edge_from_text(text_value):
+    if not text_value:
+        return ""
+
+    text_value = str(text_value)
+
+    edge_patterns = [
+        ("L3", r"(?i)(?:^|[^A-Za-z0-9])L[\s_\-]*3(?:[\s_\-]*edge)?(?:$|[^A-Za-z0-9])"),
+        ("L2", r"(?i)(?:^|[^A-Za-z0-9])L[\s_\-]*2(?:[\s_\-]*edge)?(?:$|[^A-Za-z0-9])"),
+        ("L1", r"(?i)(?:^|[^A-Za-z0-9])L[\s_\-]*1(?:[\s_\-]*edge)?(?:$|[^A-Za-z0-9])"),
+        ("K", r"(?i)(?:^|[^A-Za-z0-9])K(?:[\s_\-]*edge)?(?:$|[^A-Za-z0-9])"),
+    ]
+
+    for edge, pattern in edge_patterns:
+        if _real_refxas_safe_re.search(pattern, text_value):
+            return edge
+
+    return ""
+
+
+def _real_refxas_detect_element_from_filename(file_name):
+    if not file_name:
+        return ""
+
+    stem = _RealRefXASSafePath(str(file_name)).stem
+    tokens = _real_refxas_safe_re.split(r"[\s_\-\.]+", stem)
+
+    ignore_tokens = {
+        "foil", "sample", "scan", "edge", "highres", "data", "raw",
+        "energy", "mono", "position", "defined", "test", "reference"
+    }
+
+    # 1. Exact element tokens from filename.
+    for token in tokens:
+        if not token:
+            continue
+
+        if token.lower() in ignore_tokens:
+            continue
+
+        if token.upper() in {"K", "L1", "L2", "L3"}:
+            continue
+
+        element = _real_refxas_normalize_element_symbol(token)
+
+        if element:
+            return element
+
+    # 2. Compound-style first token, e.g. PtO2, Fe2O3, CoO.
+    first_token = tokens[0] if tokens else stem
+    compound_match = _real_refxas_safe_re.match(r"^([A-Z][a-z]?)(?:[A-Z0-9]|$)", first_token)
+
+    if compound_match:
+        element = _real_refxas_normalize_element_symbol(compound_match.group(1))
+
+        if element:
+            return element
+
+    return ""
+
+
+def _real_refxas_detect_element_edge_from_name(file_name):
+    element = _real_refxas_detect_element_from_filename(file_name)
+    edge = _real_refxas_detect_edge_from_text(file_name)
+
+    return {
+        "Element": element,
+        "Edge": edge,
+        "ElementEdgeAutoSource": "filename",
+    }
+
+
+def _real_refxas_detect_element_edge_from_header(dictionary):
+    result = {
+        "Element": "",
+        "Edge": "",
+        "ElementEdgeAutoSource": "header",
+    }
+
+    if not dictionary:
+        return result
+
+    for key in ["Element", "element", "Absorbing element", "absorbing_element", "element_input"]:
+        if key in dictionary:
+            element = _real_refxas_normalize_element_symbol(dictionary.get(key))
+
+            if element:
+                result["Element"] = element
+                break
+
+    for key in ["Edge", "edge", "Absorption edge", "absorption_edge", "edge_input"]:
+        if key in dictionary:
+            edge = _real_refxas_detect_edge_from_text(dictionary.get(key))
+
+            if edge:
+                result["Edge"] = edge
+                break
+
+    header_text = ""
+
+    for key in ["Header_str", "Header"]:
+        value = dictionary.get(key)
+
+        if isinstance(value, list):
+            header_text += "\n".join(str(item) for item in value)
+        elif value:
+            header_text += "\n" + str(value)
+
+    if not result["Element"]:
+        element_match = _real_refxas_safe_re.search(
+            r"(?im)^\s*(?:#\s*)?(?:element|absorbing\s+element)\s*[:=]\s*([A-Z][a-z]?)\b",
+            header_text,
+        )
+
+        if element_match:
+            result["Element"] = _real_refxas_normalize_element_symbol(element_match.group(1))
+
+    if not result["Edge"]:
+        edge_match = _real_refxas_safe_re.search(
+            r"(?im)^\s*(?:#\s*)?(?:edge|absorption\s+edge)\s*[:=]\s*(K|L[\s_\-]*1|L[\s_\-]*2|L[\s_\-]*3)\b",
+            header_text,
+        )
+
+        if edge_match:
+            result["Edge"] = _real_refxas_detect_edge_from_text(edge_match.group(1))
+
+    return result
+
+
+def _real_refxas_enrich_element_edge(dataset_name, dictionary):
+    if dictionary is None:
+        dictionary = {}
+
+    filename_result = _real_refxas_detect_element_edge_from_name(dataset_name)
+    header_result = _real_refxas_detect_element_edge_from_header(dictionary)
+
+    existing_element = _real_refxas_normalize_element_symbol(dictionary.get("Element", ""))
+    existing_edge = _real_refxas_detect_edge_from_text(dictionary.get("Edge", ""))
+
+    element = (
+        filename_result.get("Element")
+        or header_result.get("Element")
+        or existing_element
+        or ""
+    )
+
+    edge = (
+        filename_result.get("Edge")
+        or header_result.get("Edge")
+        or existing_edge
+        or _real_refxas_default_edge_for_element(element)
+        or ""
+    )
+
+    if element:
+        dictionary["Element"] = element
+
+    if edge:
+        dictionary["Edge"] = edge
+
+    if element or edge:
+        dictionary["ElementEdgeAutoNote"] = (
+            f"Auto-detected Element={element or 'not detected'}, "
+            f"Edge={edge or 'not detected'} from filename/header. "
+            "Please verify before final submission."
+        )
+
+    return dictionary
+
+# End Real refXAS robust filename detector safe override
+# -----------------------------------------------------------------------------
+

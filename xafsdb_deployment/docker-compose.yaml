@@ -1,0 +1,107 @@
+﻿services:
+
+  reverse-proxy:
+    image: traefik:v2.11
+    command: --api.insecure=true --providers.docker=true --entrypoints.web.address=:80
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  mongodb:
+    image: bitnamilegacy/mongodb:4.2.4
+    # Local Windows testing fix:
+    # Bitnami MongoDB sometimes cannot create /bitnami/mongodb/data without root.
+    # For KIT VM later, we can replace this with proper Linux permissions on /srv/mongodb.
+    user: root
+    volumes:
+      - MONGO_DATA:/bitnami/mongodb
+
+  db:
+    image: postgres:14.1-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=xafsdb_pg
+    # Keep Postgres private on host. This is safer for KIT VM style deployment.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - PG_DATA:/var/lib/postgresql/data
+
+  scicat:
+    image: ghcr.io/scicatproject/backend-next:a669b2f5b87ee4c2808e15168db080bc792c96a6
+    depends_on:
+      - mongodb
+    volumes:
+      - ./config/backend/config.env:/home/node/app/.env
+      - ./config/backend/functionalAccounts.json:/home/node/app/functionalAccounts.json
+    labels:
+      - "traefik.http.routers.backend.rule=PathPrefix(`/api`, `/auth`, `/explorer`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.services.backend.loadbalancer.server.port=3000"
+
+  xafsdb:
+    image: registry.hzdr.de/daphne4nfdi/xafsdb/refxas_beta2_test:latest
+    command: sh -c "python manage.py migrate && python manage.py collectstatic --no-input && uvicorn --host 0.0.0.0 --port 8000 webserver.asgi:application"
+    depends_on:
+      - scicat
+      - db
+    labels:
+      - "traefik.http.routers.xafsdb.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.xafsdb.entrypoints=web"
+      - "traefik.http.services.xafsdb.loadbalancer.server.port=8000"
+    environment:
+      - PREFIX=file
+      - SCICAT_HOST=http://scicat:3000
+      - XAFSDB_FILE_HOST=http://127.0.0.1:8000
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_NAME=xafsdb_pg
+      - DB_USER=postgres
+      - DB_PORT=5432
+    volumes:
+      # StateJun protected auth/config mount
+      - ./config/xafsdb/_auth_constants.py:/app/xafsdb_web/_auth_constants.py
+
+      # Real refXAS merged Python/Django source
+      - ../webserver/settings.py:/app/webserver/settings.py
+      - ../webserver/urls.py:/app/webserver/urls.py
+      - ../auto_dataset_create.py:/app/auto_dataset_create.py
+      - ../auto_bl_create.py:/app/auto_bl_create.py
+      - ../plugins:/app/plugins
+      - ../quality_control:/app/quality_control
+      - ../materials:/app/materials
+
+      # Real refXAS web layer
+      - ../xafsdb_web/views.py:/app/xafsdb_web/views.py
+      - ../xafsdb_web/urls.py:/app/xafsdb_web/urls.py
+      - ../xafsdb_web/utils.py:/app/xafsdb_web/utils.py
+      - ../xafsdb_web/templates:/app/xafsdb_web/templates
+      - ../xafsdb_web/static:/app/xafsdb_web/static
+
+      # Runtime temporary files
+      - ./temp:/app/temp
+
+  mongo-express:
+    image: mongo-express
+    depends_on:
+      - mongodb
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
+      - ME_CONFIG_SITE_BASEURL=/mongodb
+      - ME_CONFIG_BASICAUTH_USERNAME=
+      - ME_CONFIG_BASICAUTH_PASSWORD=
+    labels:
+      - "traefik.http.routers.mongo-express.rule=PathPrefix(`/mongodb`)"
+      - "traefik.http.routers.mongo-express.entrypoints=web"
+      - "traefik.http.services.mongo-express.loadbalancer.server.port=8081"
+      - "traefik.http.routers.mongo-express.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$2a$$12$$vyTh8.zQ85OygVq1q4cX4u50QJXfW1tSJn/dr2zuQFzAW6F31VUtq"
+
+volumes:
+  PG_DATA:
+  MONGO_DATA:

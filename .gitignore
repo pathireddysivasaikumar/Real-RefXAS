@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Django / local runtime
+*.log
+db.sqlite3
+media/
+staticfiles/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+xafsdb_deployment/.env
+xafsdb_deployment/config/backend/config.env
+xafsdb_deployment/config/backend/functionalAccounts.json
+xafsdb_deployment/config/xafsdb/_auth_constants.py
+
+# Docker/runtime data
+xafsdb_deployment/temp/
+temp/
+*.tmp
+
+# Local backups / patch scripts from testing
+*.before_plot_fix
+*.before_element_edge_fix
+*.broken_format_page
+real_refxas_plot_fix.py
+real_refxas_element_edge_fix.py
+xafsdb_deployment/real_refxas_plot_fix.py
+xafsdb_deployment/real_refxas_element_edge_fix.py
+
+# Generated archives / large local data files
+*.zip
+*.tar
+*.tar.gz
+*.gz
+
+# Large scientific/test data files should not be pushed unless intentionally needed
+*.h5
+*.hdf
+*.hdf5
+*.nxs
+*.nexus
+
+# OS / IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Key/certificate safety
+*.pem
+*.key
+*.crt

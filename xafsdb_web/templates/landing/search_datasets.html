@@ -1,0 +1,85 @@
+﻿<!DOCTYPE html>
+{% load static %}
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="stylesheet" type="text/css" href="{% static 'css/base.css' %}">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400;500;700;900&family=Sen:wght@400;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css">
+    {% block title %}
+        <title>RefXAS - Search results</title>
+    {% endblock %}
+    <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.ico' %}">
+</head>
+
+{% include "landing/navbar.html" %}
+
+<main class="page">
+
+    <table id="datatablesSimple">
+
+        <thead>
+            <tr>
+                <th>id</th>
+                <th>Title</th>
+            </tr>
+        </thead>
+
+    {% block datasets_found %}
+        <p class="results-found">A total of <b>{{datasetList.paginator.count}}</b> datasets match your search<br>
+             </p>
+    {% endblock %}
+
+        {% for dataset_meta in datasetList %}
+            {% if dataset_meta.scientificMetadata.is_approved or dataset_meta.isPublished %}
+            <tbody>
+                <tr>
+                    <td class="limit-id-length"> {{ dataset_meta.id }} </td>
+                    <td class="table-title limit-title-length">
+                        {{ dataset_meta.datasetName }}
+                        <table>
+                            <tr>
+                                <td class="limit-abstract-length"> Description: {{ dataset_meta.scientificMetadata.Description }} </td>
+                            </tr>
+                        </table>
+                    </td>
+                    <td>
+                        <form action="{% url 'dataset_details' dataset_id=dataset_meta.id %}">
+                            <button class="button-more button4" type="submit" />More</button>
+                        </form>
+                    </td>
+                </tr>
+            </tbody>
+            {% endif %}
+        {% endfor %}
+    </table>
+
+    {% block pagination %}
+        {% if datasetList.paginator.count > 0 %}
+          <div class="pagination">
+            <span class="step-links">
+                {% if datasetList.has_previous %}
+                    <a class="btn" onclick="load_page()" href="?term={{request.GET.term}}&page=1">&laquo;</a>
+                    <a class="btn" onclick="load_page()" href="?term={{request.GET.term}}&page={{ datasetList.previous_page_number }}">&lsaquo;</a>
+                {% endif %}
+
+                <span class="current">
+                    {{ datasetList.number }} of {{ datasetList.paginator.num_pages }}
+                </span>
+
+                {% if datasetList.has_next %}
+                    <a class="btn" onclick="load_page()" href="?term={{request.GET.term}}&page={{ datasetList.next_page_number }}">&rsaquo;</a>
+                    <a class="btn" onclick="load_page()" href="?term={{request.GET.term}}&page={{ datasetList.paginator.num_pages }}">&raquo;</a>
+                {% endif %}
+            </span>
+          </div>
+        {% endif %}
+    {% endblock %}
+
+</main>
+
+{% include "landing/footer.html" %}

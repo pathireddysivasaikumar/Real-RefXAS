@@ -1,0 +1,128 @@
+﻿services:
+
+  reverse-proxy:
+    image: traefik:2.5
+    command:
+      ##  Enable Traefik API: allows to monitor and manages Traefik instance
+      - --api.insecure=false
+      ## instruct Traefkik to use docker as a provider for discovering containers to proxy
+      - --providers.docker=true
+      ## define a http entrypoint for Traefik to listen to
+      - --entrypoints.web.address=:80
+      ## define a https entrypoint for Traefik to listen to
+      # - --entrypoints.web-secure.address=:443
+      ## enable TLS-ALPN-01 challenge method for obtaining SSL/TLS certificates from 'Let's Encrypt'
+      # - --certificatesresolvers.myresolver.acme.tlschallenge=true
+      ## specify email to use when obtaining SSL/TLS ceritificates from 'Let's Encrypt'
+      # - --certificatesresolvers.myresolver.acme.email=youremail@example.com
+      ## specify path where 'Let's Encrypt' account information and certificates will be stored
+      # - --certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json
+      ## specify 'Let's Encrypt' staging server to use for testing purposes. Remove this line to use the production 'Let's Encrypt' server
+      # - --certificatesresolvers.myresolver.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory
+      ## specify HTTP entrypoint to use when performing HTTP-01 challenge method for obtaining SSL/TLS certificates from 'Let's Encrypt'
+    ports:
+      ## http port in the container to the corresponding ports on the host
+      - "80:80"
+      ## https port
+      # -"443:443"
+    volumes:
+      ## Bind the docker socket and a local directory to the container
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      ## letsencrypt directory used to store 'Let's Encrypt' account information and certificates
+      # - ./letsencrypt:/letsencrypt
+
+  mongodb:
+    image: bitnami/mongodb:4.2
+    #environment:
+    #  - MONGODB_USERNAME=${MONGODB_USERNAME}
+    #  - MONGODB_PASSWORD=${DB_PASSWORD}
+    #  - MONGODB_DATABASE=${MONGODB_DATABASE}
+    ### Atm: for local development, comment volumes | uncomment for production!
+    volumes:
+      - "/srv/mongodb:/bitnami/mongodb"     # check that is mount exists on local filesystem
+
+  db:
+    image: postgres:14.1-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=xafsdb_pg
+    ports:
+      - '5432:5432'
+    volumes:
+      - PG_DATA:/var/lib/postgresql/data
+
+  scicat:
+    image: ghcr.io/scicatproject/backend-next:a669b2f5b87ee4c2808e15168db080bc792c96a6
+    #image: ghcr.io/scicatproject/backend-next:latest
+    depends_on:
+      - mongodb
+    volumes:
+      - ./config/backend/config.env:/home/node/app/.env
+      - ./config/backend/functionalAccounts.json:/home/node/app/functionalAccounts.json
+    labels:
+      - "traefik.http.routers.backend.rule=PathPrefix(`/api`, `/auth`, `/explorer`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+
+  xafsdb:
+    #build:
+    #  context: ..
+    image: registry.hzdr.de/daphne4nfdi/xafsdb/refxas_beta_test:latest
+    #image: registry.hzdr.de/daphne4nfdi/xafsdb/xafsdb_dev:latest
+    command: sh -c "python manage.py migrate && python manage.py collectstatic --no-input && uvicorn --host 0.0.0.0 webserver.asgi:application"
+    depends_on:
+      - scicat
+      - db
+    labels:
+      - "traefik.http.routers.xafsdb.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.xafsdb.entrypoints=web"
+    environment:
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_NAME=xafsdb_pg
+    volumes:
+      - ./config/xafsdb/_auth_constants.py:/app/xafsdb_web/_auth_constants.py
+
+  mongo-express:
+    image: mongo-express
+    environment:
+        - ME_CONFIG_MONGODB_SERVER=${ME_CONFIG_MONGODB_SERVER}
+        - ME_CONFIG_MONGODB_PORT=${ME_CONFIG_MONGODB_PORT}
+        - ME_CONFIG_MONGODB_ENABLE_ADMIN=${ME_CONFIG_MONGODB_ENABLE_ADMIN}
+        - ME_CONFIG_SITE_BASEURL=${ME_CONFIG_SITE_BASEURL}
+        - "ME_CONFIG_BASICAUTH_USERNAME="
+        - "ME_CONFIG_BASICAUTH_PASSWORD="
+    depends_on:
+        - mongodb
+    labels:
+       - traefik.http.routers.mongo-express.rule=PathPrefix(`/mongodb`)
+       - traefik.http.services.mongo-express.loadbalancer.server.port=8081
+       - "traefik.http.routers.mongo-express.middlewares=auth"
+       - "traefik.http.middlewares.auth.basicauth.users=admin:$$2a$$12$$vyTh8.zQ85OygVq1q4cX4u50QJXfW1tSJn/dr2zuQFzAW6F31VUtq"
+
+volumes:
+  PG_DATA:
+  # https://github.com/tiredofit/docker-db-backup#configuration
+  #db-backup-pg:
+  #  container_name: db-backup-pg
+  #  image: tiredofit/db-backup
+  #  volumes:
+  #    - ./backups-pg:/backup
+  #  environment:
+  #    # - DEBUG_MODE=TRUE
+  #    - DB_TYPE=pgsql
+  #    - DB_HOST=db
+  #    - DB_NAME=${POSTGRES_USER}
+  #    - DB_USER=${POSTGRES_PASSWORD}
+  #    - DB_PASS=${POSTGRES_DB}
+  #    - DB_DUMP_FREQ=1            # backup every minute
+  #    # - DB_DUMP_BEGIN=0000      # backup starts immediately
+  #    - DB_CLEANUP_TIME=5         # clean backups they are older than 5 minute
+  #    - CHECKSUM=SHA1
+  #    - COMPRESSION=GZ
+  #    - SPLIT_DB=FALSE
+  #    - CONTAINER_ENABLE_MONITORING=FALSE
+  #  restart: always
+
+

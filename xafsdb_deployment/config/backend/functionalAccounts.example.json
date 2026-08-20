@@ -1,0 +1,28 @@
+﻿[
+  {
+    "username": "admin",
+    "password": "CHANGE_ME_SCICAT_ADMIN_PASSWORD",
+    "email": "scicatadmin@example.org",
+    "role": "admin",
+    "global": true
+  },
+  {
+    "username": "ingestor",
+    "password": "CHANGE_ME_INGESTOR_PASSWORD",
+    "email": "scicatingestor@example.org",
+    "role": "ingestor",
+    "global": true
+  },
+  {
+    "username": "archiveManager",
+    "password": "CHANGE_ME_ARCHIVE_PASSWORD",
+    "email": "scicatarchivemanager@example.org",
+    "role": "archivemanager"
+  },
+  {
+    "username": "proposalIngestor",
+    "password": "CHANGE_ME_PROPOSAL_PASSWORD",
+    "email": "scicatproposalingestor@example.org",
+    "role": "proposalingestor"
+  }
+]

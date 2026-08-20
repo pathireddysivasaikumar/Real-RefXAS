@@ -1,0 +1,5 @@
+.venv
+.git
+.gitignore.env
+.env.before-curator-change
+*.before-env-security-fix

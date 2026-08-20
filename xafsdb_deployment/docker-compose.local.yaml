@@ -1,0 +1,207 @@
+﻿name: xafsdb_2026_local
+
+services:
+
+  reverse-proxy:
+    image: traefik:2.5
+    restart: unless-stopped
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports:
+      - "8080:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - refxas_local
+
+
+  mongodb:
+    image: bitnamilegacy/mongodb:4.2.21
+    restart: unless-stopped
+
+    volumes:
+      - MONGO_DATA:/bitnami/mongodb
+
+    healthcheck:
+      test:
+        - CMD
+        - mongo
+        - --quiet
+        - --eval
+        - "db.adminCommand('ping').ok"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+    networks:
+      - refxas_local
+
+
+  db:
+    image: postgres:14.1-alpine
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: xafsdb_pg
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - PG_DATA_LOCAL:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "pg_isready -U postgres -d xafsdb_pg"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    networks:
+      - refxas_local
+
+
+  scicat:
+    image: ghcr.io/scicatproject/backend-next:a669b2f5b87ee4c2808e15168db080bc792c96a6
+    restart: unless-stopped
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+    volumes:
+      - ./config/backend/config.env:/home/node/app/.env:ro
+      - ./config/backend/functionalAccounts.json:/home/node/app/functionalAccounts.json:ro
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/explorer`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.services.backend.loadbalancer.server.port=3000"
+
+    networks:
+      - refxas_local
+
+
+  xafsdb:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+
+    restart: unless-stopped
+
+    env_file:
+      - ../.env
+
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+
+      LOCAL_STORAGE: "True"
+
+      DB_NAME: xafsdb_pg
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: "5432"
+
+      EMAIL_HOST: localhost
+      EMAIL_HOST_USER: ""
+      EMAIL_HOST_PASSWORD: ""
+
+      AMAZON_ACCESS_KEY_ID: ""
+      AMAZON_SECRET_ACCESS_KEY: ""
+      AMAZON_STORAGE_BUCKET_NAME: local-refxas-test
+
+      PREFIX: files
+
+      SCICAT_API_URL: http://scicat:3000
+
+      USERNAME_AUTH: admin
+      PASSWORD_AUTH: ${PASSWORD_AUTH}
+
+      XAFSDB_INTERNAL_URL: http://127.0.0.1:8000
+
+    command: >
+      sh -c "
+      
+        echo 'Starting RefXAS local test environment...' &&
+        echo 'Running Django migrations...' &&
+        python manage.py migrate &&
+        echo 'Database migrations complete.' &&
+        echo 'Collecting static files for local storage...' &&
+        python manage.py collectstatic --noinput &&
+        echo 'Static files collected.' &&
+        echo 'Starting RefXAS ASGI server...' &&
+        uvicorn --host 0.0.0.0 --port 8000 webserver.asgi:application
+      "
+
+    depends_on:
+      db:
+        condition: service_healthy
+      scicat:
+        condition: service_started
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.xafsdb.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.xafsdb.entrypoints=web"
+      - "traefik.http.services.xafsdb.loadbalancer.server.port=8000"
+
+    volumes:
+      - ./config/xafsdb/_auth_constants.py:/app/xafsdb_web/_auth_constants.py:ro
+      - XAFSDB_MEDIA_LOCAL:/app/media
+
+    networks:
+      - refxas_local
+
+
+  mongo-express:
+    image: mongo-express:latest
+    restart: unless-stopped
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_PORT: "27017"
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_SITE_BASEURL: /mongodb
+      ME_CONFIG_BASICAUTH_USERNAME: localadmin
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mongo-express.rule=PathPrefix(`/mongodb`)"
+      - "traefik.http.routers.mongo-express.entrypoints=web"
+      - "traefik.http.services.mongo-express.loadbalancer.server.port=8081"
+
+    networks:
+      - refxas_local
+
+
+networks:
+  refxas_local:
+    name: xafsdb_2026_local_network
+
+
+volumes:
+
+  PG_DATA_LOCAL:
+    name: xafsdb_2026_local_postgres
+
+  MONGO_DATA:
+    name: xafsdb_2026_local_mongodb
+
+  XAFSDB_MEDIA_LOCAL:
+    name: xafsdb_2026_local_media
+

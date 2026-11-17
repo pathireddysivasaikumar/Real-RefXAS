@@ -25,7 +25,8 @@
     {% block content %}
     <br>
                 <b><h1>FOR CURATOR ONLY!</h1>
-                    <p>The following datasets require attention:</p></b>
+                    <p>The following datasets require attention:</p>
+                    <p><a href="{% url 'reviewed_datasets' %}">Reviewed datasets</a></p></b>
             {% endblock %}
 
     <table id="datatablesSimple">
@@ -58,28 +59,6 @@
 
     </table>
 
-    <center><div class="pag">
-        {% if dataset_meta_list.has_other_pages %}
-
-        {% if dataset_meta_list.has_previous %}
-          <a href="?page={{ dataset_meta_list.previous_page_number }}">&laquo;</a>
-        {% else %}
-          <li><span>&laquo;</span></li>
-        {% endif %}
-        {% for i in dataset_meta_list.paginator.page_range %}
-          {% if dataset_meta_list.number == i %}
-            <li{{ i }}(current)</li>
-          {% else %}
-            <a href="?page={{ i }}">{{ i }}</a>
-          {% endif %}
-        {% endfor %}
-        {% if dataset_meta_list.has_next %}
-          <a href="?page={{ dataset_meta_list.next_page_number }}">&raquo;</a>
-        {% else %}
-          <li&raquo;</li>
-        {% endif %}
-        {% endif %}
-    </div></center>
 
 </main>
 

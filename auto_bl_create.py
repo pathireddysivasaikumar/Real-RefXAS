@@ -40,7 +40,7 @@ import scicat_py
 
 env = environ.Env()
 environ.Env.read_env()
-prefix = env("PREFIX", default="file")
+prefix = env("PREFIX")
 
 
 class AutoBlCreation(object):
@@ -50,8 +50,16 @@ class AutoBlCreation(object):
     """
 
     def __init__(self, verify_beamline_meta) -> None:
-        self.scicat_host = env("SCICAT_HOST", default=env("SCICAT_BASE_URL", default="http://scicat:3000")).rstrip("/")
-        self.configuration = scicat_py.Configuration(host=self.scicat_host)
+        self.configuration = scicat_py.Configuration(
+            # production
+            host="http://34.27.28.17",
+            # dev (varies due to shut-down/restart of vm - every restart changes ip)
+            #host="http://34.29.27.51",
+            # local server
+            #host = "http://localhost:8000",
+            # ubuntu
+            #host = "http://172.27.20.173",
+        )
         self.auth_login()
         self.verify_beamline_meta = verify_beamline_meta
         self.create_beamline()
@@ -73,7 +81,6 @@ class AutoBlCreation(object):
             )
             api_response = api_instance.auth_controller_login(credentials_dto)
             self.access_token = api_response["access_token"]
-            print("ME ACCESS TOKEN:", self.access_token)
             return self.access_token
 
     def generate_random_string(self):

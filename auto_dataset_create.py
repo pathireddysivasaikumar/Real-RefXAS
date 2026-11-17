@@ -45,8 +45,8 @@ import requests
 from django.core.mail import send_mail
 
 import scicat_py
-from plugins.read_data import ReadData, read_data
-from quality_control.quality_check import CheckQuality, check_quality
+from plugins.read_data import read_data
+from quality_control.quality_check import check_quality
 from webserver.settings import EMAIL_HOST_USER
 
 env = environ.Env()
@@ -69,17 +69,16 @@ class AutoDatasetCreation(object):
         self.verify_data = verify_data
 
         # print("Dataset creation initialized...how exciting!")
-        # Real refXAS: keep StateJun safe deployment behavior, but make host names
-        # environment-driven so the same source works locally, in Docker, and on KIT VM.
-        self.scicat_host = env(
-            "SCICAT_HOST",
-            default=os.getenv("SCICAT_BASE_URL", "http://scicat:3000"),
-        ).rstrip("/")
-        self.xafsdb_file_host = env(
-            "XAFSDB_FILE_HOST",
-            default=os.getenv("XAFSDB_FILE_API_HOST", "http://127.0.0.1:8000"),
-        ).rstrip("/")
-        self.configuration = scicat_py.Configuration(host=self.scicat_host)
+        self.configuration = scicat_py.Configuration(
+            # production
+            host=os.getenv("SCICAT_BASE_URL", "http://scicat:3000"),
+            # dev (varies due to shut-down/restart of vm - every restart changes ip)
+            #host="http://34.29.27.51",
+            # local server
+            #host = "http://localhost:8000",
+            # ubuntu
+            #host = "http://172.27.20.173",
+        )
         self.qc_path = "quality_control/"
         path.append(self.qc_path)
         self.auth_login()
@@ -118,7 +117,6 @@ class AutoDatasetCreation(object):
             )
             api_response = api_instance.auth_controller_login(credentials_dto)
             self.access_token = api_response["access_token"]
-            print("ME ACCESS TOKEN:", self.access_token)
             return self.access_token
 
     def create_testdata(self) -> Optional[str]:
@@ -131,7 +129,7 @@ class AutoDatasetCreation(object):
         titlename = self.data_set_name
         self.data_dict = {
             "owner_group": self.verify_data.get("Owner group"),
-            "access_groups": ["NO_THUMBNAIL"],
+            "access_groups": "NO_THUMBNAIL",
             "creation_location": "wuppertal",
             "principal_investigator": "someone",
             "dataset_name": titlename
@@ -234,7 +232,7 @@ class AutoDatasetCreation(object):
                 },
                 "is_approved": False,
             },
-            "keywords": [],
+            "keywords": "None",
         }
 
         with scicat_py.ApiClient(self.configuration) as api_client:
@@ -265,7 +263,7 @@ class AutoDatasetCreation(object):
             values: Dict[str, Any] = {"dataset_id": self.datasetId}
             # production:
             self.responds = requests.post(
-                os.getenv("XAFSDB_FILE_API_URL", f"{self.xafsdb_file_host}/{prefix}/{prefix}/"), files=files, data=values
+                os.getenv("XAFSDB_FILE_API_URL", f"http://xafsdb:8000/{prefix}/{prefix}/"), files=files, data=values
             )
             # dev:
             #self.responds = requests.post(
@@ -341,11 +339,26 @@ class AutoDatasetCreation(object):
             ### loading the json criteria file for reference
             cq_json = self.qc_path + "Criteria.json"
             ### initialize quality check object
-            cq = check_quality(quality_criteria_json=cq_json)
+            from plugins.column_correction import selection_from_form
+
+            column_selection = selection_from_form(self.verify_data)
+            edge_options = {}
+            if column_selection:
+                edge_options = {
+                    "element": self.verify_data.get("Element") or None,
+                    "edge": self.verify_data.get("Edge") or None,
+                }
+            cq = check_quality(quality_criteria_json=cq_json, **edge_options)
             qc_list = []  ### this list will contain the quality criteria
             ### here the measurement data has to be forwarded, where will the data be stored in SciCat?
             # meas_data = np.loadtxt(self.short_url, skiprows=1)
-            rd = ReadData(update_erange=self.verify_data)
+            if column_selection:
+                rd = read_data(
+                    source=self.data_dict["scientific_metadata"]["Data"]["Source"],
+                    column_selection=column_selection,
+                )
+            else:
+                rd = read_data(update_erange=self.verify_data)
             rd.process_data(self.s3_data_path)
             # print("Meas_data from qc_and_update:", meas_data)
             cq.load_data(
@@ -355,7 +368,7 @@ class AutoDatasetCreation(object):
             )
             ### perform preprocessing on the data
             data = (
-                cq.preprocess_data(take_first=True)
+                cq.preprocess_data(take_first=not bool(column_selection))
             )  #: data is a larch group with calibrated_energy = data.energy and absorption data.mu
             # TODO: print(data) and send to download (here mu and energy)
             ### plot the data and return the figure object
@@ -481,7 +494,7 @@ class AutoDatasetCreation(object):
         QC_attach_figure_data = {
             "thumbnail": figure,
             "caption": caption,
-            "access_groups": [],
+            "access_groups": "None",
             "created_by": "string",
             "updated_by": "string",
             "owner_group": "some group",

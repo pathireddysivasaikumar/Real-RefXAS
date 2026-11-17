@@ -18,46 +18,55 @@ Requirements:
 
 """
 
+import base64
+import json
+
 ##############################################################################
 ### import packages ###
 ##############################################################################
 import logging
-import os
-from pathlib import Path
-from typing import Type, List, Dict, Any, NoReturn
+import re  # Regular expression module
+import zipfile
+from collections import defaultdict
+from io import BytesIO
+from itertools import zip_longest
+from typing import Any, Dict, List, NoReturn, Type
 
-import scicat_py
-from auto_dataset_create import AutoDatasetCreation
-from auto_bl_create import AutoBlCreation
+import h5py
+import numpy as np
+import yaml
 from django import forms
-from django.core.mail import BadHeaderError, send_mail
-from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
-from django.http import (HttpResponse, HttpResponseBadRequest,
-                         HttpResponseForbidden, HttpResponseNotFound,
-                         HttpResponseServerError, HttpRequest)
-from django.shortcuts import redirect, render
-from django.views.generic.base import TemplateView
-from django.views.decorators.http import require_POST
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
+from django.core.mail import BadHeaderError, send_mail
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBadRequest,
+    HttpResponseForbidden,
+    HttpResponseNotFound,
+    HttpResponseServerError,
+)
+from django.shortcuts import redirect, render
+from django.views.decorators.http import require_POST
+from django.views.generic.base import TemplateView
 from rest_framework.decorators import api_view
 from rest_framework.parsers import FileUploadParser, MultiPartParser
 from rest_framework.viewsets import ModelViewSet
 
+import scicat_py
+from auto_bl_create import AutoBlCreation
+from auto_dataset_create import AutoDatasetCreation
+from plugins.read_data import read_data
 from webserver.settings import CONTEXT, EMAIL_HOST_USER
-import json
-import base64
-import zipfile
-import h5py
-from io import BytesIO
-import yaml
 
 from ._auth_constants import CONFIGURATION
 from .models import Files
 from .serializers import FileCreateUpdateSerializer, FileSerializer
-from .utils import get_access, get_all_datasets, term_checker, snake_case_to_title_case
+from .utils import get_access, get_all_datasets, snake_case_to_title_case, term_checker
 
-from plugins.read_data import ReadData
 
 def beamline_details(request, beamline_id: str) -> HttpResponse:
     """
@@ -79,14 +88,19 @@ def beamline_details(request, beamline_id: str) -> HttpResponse:
 
         # Assuming you have an API endpoint to fetch beamline metadata
         api_instance_beamline = scicat_py.InstrumentsApi(api_client)
-        #try:
-        beamline_metadata = api_instance_beamline.instruments_controller_find_one(id=beamline_id)
-        #except Exception as e:
-            # Handle exceptions and redirect to an error page or return an appropriate response
-            #return redirect('error')
+        # try:
+        beamline_metadata = api_instance_beamline.instruments_controller_find_one(
+            id=beamline_id
+        )
+        # except Exception as e:
+        # Handle exceptions and redirect to an error page or return an appropriate response
+        # return redirect('error')
 
     # Render the beamline details using a Django template
-    return render(request, 'landing/base_beamline.html', {'beamline_metadata': beamline_metadata})
+    return render(
+        request, "landing/base_beamline.html", {"beamline_metadata": beamline_metadata}
+    )
+
 
 def beamline_upload(request: HttpRequest) -> HttpResponse:
     """
@@ -106,6 +120,7 @@ def beamline_upload(request: HttpRequest) -> HttpResponse:
     mechanisms to locate and render the specified template.
     """
     return render(request, "landing/addbeamline.html")
+
 
 @api_view(["POST"])
 def add_beamline(request: HttpRequest) -> HttpResponse:
@@ -136,7 +151,7 @@ def add_beamline(request: HttpRequest) -> HttpResponse:
         - Interaction with the SciCat API to fetch existing beamlines and compare names.
         - User feedback provided through messages indicating success or failure.
     """
-    posted_beamline_name = request.POST.get('beamline', '')
+    posted_beamline_name = request.POST.get("beamline", "")
 
     # Initialize API client and fetch existing beamlines
     with scicat_py.ApiClient(configuration=CONFIGURATION) as api_client:
@@ -148,27 +163,31 @@ def add_beamline(request: HttpRequest) -> HttpResponse:
         # Check if the posted beamline name already exists in the existing beamlines
         for instrument in beamline_list:
             # Safely check if custom_metadata exists and has the 'FACILITY' key
-            if instrument.custom_metadata and 'FACILITY' in instrument.custom_metadata:
-                facility_info = instrument.custom_metadata['FACILITY']
+            if instrument.custom_metadata and "FACILITY" in instrument.custom_metadata:
+                facility_info = instrument.custom_metadata["FACILITY"]
                 # Use .get() to safely access 'beamline', providing a default of an empty string if not found
-                existing_beamline_name = facility_info.get('beamline', '')
+                existing_beamline_name = facility_info.get("beamline", "")
 
                 # Proceed with comparison if existing_beamline_name is not an empty string
-                if existing_beamline_name and posted_beamline_name.lower() == existing_beamline_name.lower():
+                if (
+                    existing_beamline_name
+                    and posted_beamline_name.lower() == existing_beamline_name.lower()
+                ):
                     # Beamline with the same name already exists, handle accordingly
-                    messages.error(request, 'Beamline name already exists.')
-                    return redirect("error")
+                    messages.error(request, "Beamline name already exists.")
+                    return redirect("landing/error.html")
             else:
                 # Optionally handle the case where instrument does not have the expected metadata structure
-                print(f"Instrument {getattr(instrument, 'pid', 'Unknown ID')} does not have the expected custom_metadata structure.")
-
-
+                print(
+                    f"Instrument {getattr(instrument, 'pid', 'Unknown ID')} does not have the expected custom_metadata structure."
+                )
 
     # If the beamline name does not exist, proceed with creation
     AutoBlCreation(
         verify_beamline_meta=request.POST,
     )
-    return redirect('thank_you')
+    return redirect("thank_you")
+
 
 def beamline_list(request: HttpRequest) -> HttpResponse:
     """
@@ -203,7 +222,7 @@ def beamline_list(request: HttpRequest) -> HttpResponse:
 
         api_instance_dataset = scicat_py.InstrumentsApi(api_client)
         beamline_meta_list = api_instance_dataset.instruments_controller_find_all()
-        #print(beamline_meta_list)
+        # print(beamline_meta_list)
     return render(
         request,
         "landing/beamline_list.html",
@@ -211,205 +230,8 @@ def beamline_list(request: HttpRequest) -> HttpResponse:
     )
 
 
-
-
-def _real_refxas_normalize_element_symbol(value):
-    """
-    Normalize a possible element symbol safely.
-    Examples: co -> Co, FE -> Fe, As -> As.
-    """
-    if not value:
-        return None
-    value = str(value).strip()
-    if not value:
-        return None
-    if len(value) == 1:
-        return value.upper()
-    return value[0].upper() + value[1:].lower()
-
-
-def _real_refxas_valid_elements():
-    """
-    Periodic-table symbols used to protect auto-detection from random words.
-    Kept local and dependency-free so it works for all upload formats.
-    """
-    return {
-        "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
-        "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
-        "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
-        "Ga", "Ge", "As", "Se", "Br", "Kr",
-        "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
-        "In", "Sn", "Sb", "Te", "I", "Xe",
-        "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy",
-        "Ho", "Er", "Tm", "Yb", "Lu",
-        "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi",
-        "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am",
-        "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh",
-        "Hs", "Mt", "Ds", "Rg", "Cn"
-    }
-
-
-def _real_refxas_detect_element_edge_from_name(dataset_name):
-    """
-    Detect element/edge from common XAS filenames.
-
-    Good examples:
-    - Co_foil_Co_K_0000.xdi -> Co / K
-    - Fe_K_edge.dat -> Fe / K
-    - Pt_L3_reference.xdi -> Pt / L3
-    - Cu foil K scan.dat -> Cu / K
-    """
-    import re
-    from pathlib import Path
-
-    valid_elements = _real_refxas_valid_elements()
-    valid_edges = {"K", "L1", "L2", "L3", "M4,5", "M45", "M4", "M5"}
-
-    stem = Path(str(dataset_name)).stem
-    tokens = [t for t in re.split(r"[^A-Za-z0-9]+", stem) if t]
-
-    normalized_tokens = []
-    for token in tokens:
-        upper = token.upper()
-        if upper in {"K", "L1", "L2", "L3", "M45", "M4", "M5"}:
-            normalized_tokens.append(upper)
-        else:
-            normalized_tokens.append(_real_refxas_normalize_element_symbol(token))
-
-    # Best case: element immediately before edge token, e.g. Co_K, Fe_L3.
-    for idx, token in enumerate(normalized_tokens):
-        if token in valid_edges and idx > 0:
-            candidate_element = normalized_tokens[idx - 1]
-            if candidate_element in valid_elements:
-                edge = "M4,5" if token in {"M45", "M4", "M5"} else token
-                return candidate_element, edge
-
-    # Next best: any obvious edge token plus nearest valid element before/after.
-    detected_edge = None
-    for token in normalized_tokens:
-        if token in valid_edges:
-            detected_edge = "M4,5" if token in {"M45", "M4", "M5"} else token
-            break
-
-    detected_element = None
-    for token in normalized_tokens:
-        if token in valid_elements and token not in {"K"}:
-            detected_element = token
-            break
-
-    return detected_element, detected_edge
-
-
-def _real_refxas_detect_element_edge_from_header(dictionary):
-    """
-    Detect element/edge from extracted header text or extracted metadata keys.
-    This is intentionally conservative to avoid false positives.
-    """
-    import re
-
-    valid_elements = _real_refxas_valid_elements()
-
-    header_parts = []
-    for key in ("Header_str", "Header", "header", "Comments", "comments"):
-        value = dictionary.get(key) if isinstance(dictionary, dict) else None
-        if value:
-            header_parts.append(str(value))
-
-    # Also inspect explicit dictionary values if reader already found something.
-    for key in ("Element", "element", "Edge", "edge"):
-        value = dictionary.get(key) if isinstance(dictionary, dict) else None
-        if value:
-            header_parts.append(f"{key}: {value}")
-
-    text = "\n".join(header_parts)
-
-    detected_element = None
-    detected_edge = None
-
-    # Patterns like "element: Co", "Element = Fe", "absorber Ni"
-    element_patterns = [
-        r"\belement\s*[:=]\s*([A-Z][a-z]?)\b",
-        r"\babsorber\s*[:=]?\s*([A-Z][a-z]?)\b",
-        r"\bfoil\s*[:=]?\s*([A-Z][a-z]?)\b",
-    ]
-    for pattern in element_patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
-            candidate = _real_refxas_normalize_element_symbol(match.group(1))
-            if candidate in valid_elements:
-                detected_element = candidate
-                break
-
-    # Patterns like "edge: K", "Edge = L3", "Co K edge"
-    edge_patterns = [
-        r"\bedge\s*[:=]\s*(K|L1|L2|L3|M4,5|M45|M4|M5)\b",
-        r"\b(K|L1|L2|L3|M4,5|M45|M4|M5)\s*[-_ ]?edge\b",
-    ]
-    for pattern in edge_patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
-            candidate = match.group(1).upper()
-            detected_edge = "M4,5" if candidate in {"M45", "M4", "M5"} else candidate
-            break
-
-    return detected_element, detected_edge
-
-
-def _real_refxas_enrich_element_edge(dataset_name, dictionary):
-    """
-    Improve verify-page Element/Edge defaults without changing manual user control.
-
-    Priority:
-    1. filename pattern, because beamline files often include Co_K, Fe_K, Pt_L3, etc.
-    2. header metadata
-    3. existing reader dictionary, if valid
-    4. safe fallback: no forced element, K only if nothing better is found
-    """
-    if dictionary is None or not isinstance(dictionary, dict):
-        dictionary = {}
-
-    valid_elements = _real_refxas_valid_elements()
-
-    name_element, name_edge = _real_refxas_detect_element_edge_from_name(dataset_name)
-    header_element, header_edge = _real_refxas_detect_element_edge_from_header(dictionary)
-
-    existing_element = _real_refxas_normalize_element_symbol(
-        dictionary.get("Element") or dictionary.get("element")
-    )
-    if existing_element not in valid_elements:
-        existing_element = None
-
-    existing_edge = dictionary.get("Edge") or dictionary.get("edge")
-    if existing_edge:
-        existing_edge = str(existing_edge).strip().upper()
-        if existing_edge in {"M45", "M4", "M5"}:
-            existing_edge = "M4,5"
-        if existing_edge not in {"K", "L1", "L2", "L3", "M4,5"}:
-            existing_edge = None
-
-    final_element = name_element or header_element or existing_element
-    final_edge = name_edge or header_edge or existing_edge or "K"
-
-    if final_element:
-        dictionary["Element"] = final_element
-        dictionary["AutoElement"] = final_element
-    else:
-        dictionary["Element"] = ""
-        dictionary["AutoElement"] = ""
-
-    dictionary["Edge"] = final_edge
-    dictionary["AutoEdge"] = final_edge
-
-    dictionary["ElementEdgeAutoNote"] = (
-        f"Auto-detected from filename/header: Element={final_element or 'not detected'}, Edge={final_edge}"
-    )
-
-    return dictionary
-
-
-
 # render the file upload view and navigate to the html page
-#@user_passes_test(lambda u: u.is_superuser)
+# @user_passes_test(lambda u: u.is_superuser)
 def dataset_upload_view(request) -> HttpResponse:
     """
     Renders the "upload.html" template with the provided context.
@@ -426,111 +248,108 @@ def dataset_upload_view(request) -> HttpResponse:
 # read the uploaded file and send the data to verify view
 @api_view(["POST"])
 def dataset_upload(request):
-    """
-    Real refXAS upload handler.
-
-    Adds V5 value to StateJun without losing safety:
-    - supports text XAS files and binary HDF5/Nexus files
-    - protects against temp/temp path mistakes
-    - stores only the basename in temp/
-    - extracts header/preview metadata using the V5 ReadData reader
-    - returns a clear 400/500 instead of a silent broken page
-    """
-    logger = logging.getLogger(__name__)
-    temp_dir = Path("temp")
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    from django.http import HttpResponseBadRequest
+    from plugins.column_correction import initial_qc_state, pending_upload_path, store_pending_upload
+    from plugins.column_preview import build_column_preview
+    from plugins.frank_preview import original_file_qc
+    from plugins.read_data import ReadData
 
     try:
-        temporary_uploaded_file = request.FILES.get("file")
-        posted_dataset_name = request.POST.get("dataset_name")
-
-        if temporary_uploaded_file is None and not posted_dataset_name:
-            error_msg = json.dumps({"detail": "Please add a file before clicking upload."})
-            return HttpResponse(error_msg, status=400, content_type="application/json")
-
-        if temporary_uploaded_file is not None:
-            dataset_name = os.path.basename(temporary_uploaded_file.name)
-            suffix = Path(dataset_name).suffix.lower()
-            file_path = temp_dir / dataset_name
-
-            if suffix in {".h5", ".hdf", ".hdf5", ".nxs", ".nexus"}:
-                with open(file_path, "wb") as out_file:
-                    for chunk in temporary_uploaded_file.chunks():
-                        out_file.write(chunk)
-                decoded_list = []
-            else:
-                raw_bytes = temporary_uploaded_file.read()
-                decoded_file = raw_bytes.decode("utf-8", errors="replace")
-                file_path.write_text(decoded_file, encoding="utf-8")
-                decoded_list = decoded_file.splitlines()
+        incoming = request.FILES.get("file")
+        if incoming is not None:
+            path = store_pending_upload(request, incoming)
         else:
-            dataset_name = os.path.basename(posted_dataset_name)
-            file_path = temp_dir / dataset_name
-            if not file_path.exists():
-                return HttpResponseBadRequest(f"Uploaded file was not found: {file_path}")
-            suffix = file_path.suffix.lower()
-            if suffix in {".h5", ".hdf", ".hdf5", ".nxs", ".nexus"}:
-                decoded_list = []
-            else:
-                decoded_list = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            path = pending_upload_path(request, request.POST.get("dataset_name", ""))
+    except (ValueError, OSError) as exc:
+        return HttpResponseBadRequest("Unable to open measurement: " + str(exc))
 
-        update_erange = request.POST
-        reader = ReadData(update_erange=update_erange)
-        dictionary = reader.extract_header(data_path=str(file_path))
-        dictionary = _real_refxas_enrich_element_edge(dataset_name, dictionary)
+    try:
+        reader = ReadData(update_erange=request.POST, preview_columns=True)
+        dictionary = reader.extract_header(data_path=path)
+        column_preview = build_column_preview(reader)
+    except (ValueError, OSError, AttributeError, KeyError, IndexError):
+        logging.getLogger(__name__).exception("Unable to read uploaded measurement")
+        return HttpResponseBadRequest("Unable to read the measurement. Check its format and try again.")
 
-        if decoded_list:
-            dictionary.setdefault("UploadedRows", max(len(decoded_list) - 1, 0))
+    dictionary["Source"] = reader.source
+    frank_qc = original_file_qc(path, reader.source)
+    if frank_qc["available"]:
+        dictionary.update(
+            E_range_min=frank_qc["energy_min"],
+            E_range_max=frank_qc["energy_max"],
+            Detected_element=frank_qc["element"],
+            Detected_edge=frank_qc["edge"],
+        )
+    return render(request, "landing/verify.html", {
+        "decode_file_name": path.name,
+        "dictionary": dictionary,
+        "column_preview": column_preview,
+        "frank_qc": frank_qc,
+        "qc_initial_state": initial_qc_state(path, frank_qc),
+    })
 
-        context = {
-            "decode_file_name": dataset_name,
-            "dictionary": dictionary,
-        }
-        return render(request, "landing/verify.html", context)
 
-    except Exception as e:
-        logger.exception("Dataset upload/header extraction failed")
-        error_msg = json.dumps({"detail": f"Internal Server Error: {type(e).__name__}: {e}"})
-        return HttpResponse(error_msg, status=500, content_type="application/json")
+# TODO:
+# except Exception as e:
+#    error_msg = json.dumps({"detail": "Internal Server Error _" + str(e)})
+#    return HttpResponse(error_msg, status=500)
 
 
 @api_view(["POST"])
 def verify_upload(request) -> HttpResponse:
     """
-    Verifies the uploaded dataset and sends it to SciCat.
-    SciCat then stores the dataset metadata in MongoDB.
+    This function handles the verification process of an uploaded dataset on the webserver.
+    It takes a POST request containing the dataset name and a flag for updating the energy range
+    (update_erange). The function initiates an AutoDatasetCreation instance with the provided
+    information and returns a HttpResponse upon successful verification.
+
+    Args:
+    request (HttpRequest): The POST request containing the dataset name and the update_erange flag.
+
+    Returns:
+    HttpResponse: Returns a HttpResponse rendering the home page if the verification is successful.
+                  If an error occurs during the verification process, it returns a
+                  HttpResponseServerError with an error message.
+
     """
     logger = logging.getLogger(__name__)
+    # try:
+    # verify_data = request.POST
+    # print("verify_data:", verify_data)
+    from django.http import HttpResponseBadRequest
+    from plugins.column_correction import pending_upload_path
 
-    file_name = request.POST.get("dataset_name")
-
-    if not file_name:
-        return HttpResponseBadRequest("Missing dataset_name from verification form.")
-
-    # Keep only the actual file name, not a full path.
-    # This prevents path problems like temp/temp/file.dat.
-    file_name = os.path.basename(file_name)
-
-    file_path = Path("temp") / file_name
-
-    if not file_path.exists():
-        return HttpResponseBadRequest(f"Uploaded file was not found: {file_path}")
-
+    update_erange = request.POST
     try:
-        AutoDatasetCreation(
-            s3_data_path=str(file_path),
-            data_set_name=file_name,
-            verify_data=request.POST,
-        )
+        measurement_path = pending_upload_path(request, update_erange.get("dataset_name", ""))
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    if update_erange.get("Use Column Selection") == "yes":
+        from plugins.column_correction import validate_applied_qc
 
-        return redirect("thank_you")
+        try:
+            update_erange = validate_applied_qc(update_erange, path=measurement_path)
+        except ValueError as exc:
+            return HttpResponseBadRequest(
+                "Please review the selected spectrum: " + str(exc)
+            )
+    # print("update_erange:", update_erange)
+    file_path = update_erange.get("dataset_name")
+    # print("FILE_path from verify_upload:", str(file_path))
+    AutoDatasetCreation(
+        s3_data_path=str(measurement_path),
+        data_set_name=file_path,
+        verify_data=update_erange,
+    )
+    # dataset_id = adc.create_testdata()
+    # return redirect("dataset_details", dataset_id=dataset_id)
+    # return render(request, "landing/home.html")
+    return redirect("thank_you")
 
-    except Exception as e:
-        logger.exception("Dataset verification/upload failed")
+    # except Exception as e:
+    #    logger.exception("Error occurred while verifying upload: %s", str(e))
+    #    return HttpResponseServerError("Error occurred while verifying upload")
 
-        return HttpResponseServerError(
-            f"Dataset upload failed: {type(e).__name__}: {e}"
-        )
 
 @api_view(["POST"])
 def approval_by_curator(request: HttpRequest, dataset_id: str) -> NoReturn:
@@ -560,10 +379,28 @@ def approval_by_curator(request: HttpRequest, dataset_id: str) -> NoReturn:
         endpoint availability. It assumes that the dataset ID provided is valid and exists in the
         database.
     """
-    if request.method == 'POST':
-        approval_status = request.POST.get('approval_status') == 'APPROVAL'
-        curator_info = request.POST.get('curator_updated_by')
-        #print(f"Approval Status for dataset {dataset_id}: {approval_status}")
+    if request.method == "POST":
+        approval_status = request.POST.get("approval_status") == "APPROVAL"
+        curator_info = request.POST.get("curator_updated_by")
+        update_sample_id = request.POST.get("update_sample_id")
+        update_coll_code = request.POST.get("update_coll_code")
+        update_phys_state = request.POST.get("update_phys_state")
+        update_crystal_orientation = request.POST.get("update_crystal_orientation")
+        update_temperature = request.POST.get("update_temperature")
+        update_pressure = request.POST.get("update_pressure")
+        update_sample_environment = request.POST.get("update_sample_environment")
+        update_description = request.POST.get("update_description")
+        update_general_remarks = request.POST.get("update_general_remarks")
+        update_sample_preparation = request.POST.get("update_sample_preparation")
+        update_doi = request.POST.get("update_doi")
+        update_reference = request.POST.get("update_reference")
+        update_facility = request.POST.get("update_facility")
+        update_aquisition_mode = request.POST.get("update_aquisition_mode")
+        update_crystals = request.POST.get("update_crystals")
+        update_mirrors = request.POST.get("update_mirrors")
+        update_detectors = request.POST.get("update_detectors")
+        update_max_k_range = request.POST.get("update_max_k_range")
+        # print(f"Approval Status for dataset {dataset_id}: {approval_status}")
 
         with scicat_py.ApiClient(configuration=CONFIGURATION) as api_client:
             access_token = get_access()
@@ -573,18 +410,47 @@ def approval_by_curator(request: HttpRequest, dataset_id: str) -> NoReturn:
 
             update_dataset_dto = scicat_py.UpdateDatasetDto(
                 is_published=approval_status,
-                updated_by=curator_info
-                )
+                updated_by=curator_info,
+                history={
+                    "updatedscientificMetadata": {
+                        "Description": update_description,
+                        "sample_info": {
+                            "coll_code": update_coll_code,
+                            "physical_state": update_phys_state,
+                            "crystal_orientation": update_crystal_orientation,
+                            "temperature": update_temperature,
+                            "pressure": update_pressure,
+                            "sample_environment": update_sample_environment,
+                            "general_remarks": update_general_remarks,
+                            "sample_prep": update_sample_preparation,
+                            "sample_id": update_sample_id,
+                        },
+                        "bibliography": {
+                            "doi": update_doi,
+                            "reference": update_reference,
+                        },
+                        "instrument": {
+                            "facility": update_facility,
+                            "aquisition_mode": update_aquisition_mode,
+                            "crystals": update_crystals,
+                            "mirrors": update_mirrors,
+                            "detectors": update_detectors,
+                            "max_k_range": update_max_k_range,
+                        },
+                    },
+                },
+            )
             api_response = (
-                    api_instance.datasets_controller_find_by_id_replace_or_create(
-                        dataset_id,
-                        update_dataset_dto,
-                        async_req=False,
-                        _preload_content=False,
-                    )
+                api_instance.datasets_controller_find_by_id_replace_or_create(
+                    dataset_id,
+                    update_dataset_dto,
+                    async_req=False,
+                    _preload_content=False,
                 )
-            #json.loads(api_response.data)
-    return redirect('dataset_list_curator')
+            )
+            # print(json.loads(api_response.data))
+    return redirect("dataset_list_curator")
+
 
 def thank_you(request: HttpRequest) -> HttpResponse:
     """
@@ -600,7 +466,7 @@ def thank_you(request: HttpRequest) -> HttpResponse:
     Returns:
         HttpResponse: An HttpResponse object that renders the 'thank_you.html' template.
     """
-    return render(request, 'landing/thank_you.html')
+    return render(request, "landing/thank_you.html")
 
 
 def dataset_list(request) -> HttpResponse:
@@ -644,6 +510,7 @@ def dataset_list(request) -> HttpResponse:
         {"dataset_meta_list": dataset_meta_list, "debug_data": debug_data},
     )
 
+
 def dataset_details(request, dataset_id: str) -> HttpResponse:
     """
     Retrieves information about the given dataset from scicat and renders the dataset details page with the
@@ -665,91 +532,10 @@ def dataset_details(request, dataset_id: str) -> HttpResponse:
 
         api_instance_dataset = scicat_py.DatasetsApi(api_client)
         dataset_meta = api_instance_dataset.datasets_controller_find_by_id(dataset_id)
-        #print("Dataset Meta:" , dataset_meta)
-
-        # Check if the user wants to download the metadata
-        #if request.GET.get('download_metadata'):
-        #    # Convert metadata to JSON formatted string
-        #    metadata_json = json.dumps(dataset_meta, indent=4)
-        #    # Create an HttpResponse object with the JSON data
-        #    response = HttpResponse(metadata_json, content_type='application/json')
-        #    # Set content disposition header for download prompt
-        #    response['Content-Disposition'] = f'attachment; filename="{dataset_id}_metadata.json"'
-        #    return response
-
-        #if request.GET.get('download_metadata_hdf5'):
-        ## Create an in-memory HDF5 file
-        #    output = BytesIO()
-        #    with h5py.File(output, 'w') as hf:
-        #        for key, value in dataset_meta.items():
-        #            hf.create_dataset(key, data=str(value))
-        #    # Prepare HttpResponse
-        #    output.seek(0)
-        #    response = HttpResponse(output.read(), content_type='application/x-hdf5')
-        #    response['Content-Disposition'] = f'attachment; filename="{dataset_id}_metadata.hdf5"'
-#
-        #    return response
-
-        #if request.GET.get('download_metadata_yaml'):
-        #    # Convert metadata to YAML formatted string
-        #    metadata_yaml = yaml.dump(dataset_meta)
-        #    # Create HttpResponse with YAML data
-        #    response = HttpResponse(metadata_yaml, content_type='application/x-yaml')
-        #    response['Content-Disposition'] = f'attachment; filename="{dataset_id}_metadata.yaml"'
-#
-        #    return response
-
-        #if request.GET.get('download_text'):
-        #    # Adding Sample Info section:
-        #    content_str = "*Sample Info*:\n"
-        #    content_str += f"    - ID: {dataset_meta.get('id', 'N/A')}\n"
-        #    content_str += f"    - Dataset Name: {dataset_meta.get('datasetName', 'N/A')}\n"
-        #    sample_info = dataset_meta['scientificMetadata']['sample_info']
-        #    for key, value in sample_info.items():
-        #        # Convert the key from snake_case to Title Case
-        #        title_case_key = snake_case_to_title_case(key)
-        #        content_str += f"    - {title_case_key}: {value}\n"
-#
-        #    # Adding Bibliography section
-        #    content_str += "\n*Bibliography*:\n"
-        #    bibliography = dataset_meta['scientificMetadata'].get('bibliography', {})
-        #    content_str += f"    - Owner: {dataset_meta.get('owner', 'N/A')}\n"
-        #    content_str += f"    - Institute: {dataset_meta.get('ownerGroup', 'N/A')}\n"
-        #    content_str += f"    - Contact Email: {dataset_meta.get('contactEmail', 'N/A')}\n"
-        #    for key, value in bibliography.items():
-        #        # Convert the key from snake_case to Title Case
-        #        title_case_key = snake_case_to_title_case(key)
-        #        content_str += f"    - {title_case_key}: {value}\n"
-#
-        #    # Adding Instrument section
-        #    content_str += "\n*Instrument*:\n"
-        #    instrument = dataset_meta['scientificMetadata'].get('instrument', {})
-        #    for key, value in instrument.items():
-        #        # Convert the key from snake_case to Title Case
-        #        title_case_key = snake_case_to_title_case(key)
-        #        content_str += f"    - {title_case_key}: {value}\n"
-#
-        #    # Filter Files objects by dataset_id
-        #    item_list = Files.objects.filter(dataset_id=dataset_id)
-        #    for item in item_list:
-        #        # Ensure there is a file associated with the item
-        #        if item.file:
-        #            # Reading the file content
-        #            item.file.open('r')
-        #            file_content = item.file.read()
-        #            content_str += f"\nContent of {item.file_name}:\n{file_content}\n"
-        #            item.file.close()
-#
-        #    # Creating the HttpResponse object with the content string
-        #    response = HttpResponse(content_str, content_type='text/plain')
-        #    response['Content-Disposition'] = f'attachment; filename="{dataset_id}_metaData.txt"'
-        #    return response
 
         attachment_response = (
             api_instance_dataset.datasets_controller_find_all_attachments(dataset_id)
         )
-        #print(len(attachment_response))
-        #print(attachment_response)
 
         try:
             raw_data_fig = attachment_response[0].thumbnail
@@ -760,10 +546,10 @@ def dataset_details(request, dataset_id: str) -> HttpResponse:
         except IndexError:
             return redirect("error")
 
-        if request.GET.get('download_zip'):
+        if request.GET.get("download_zip"):
             zip_buffer = BytesIO()
 
-            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 # Metadata as JSON
                 metadata_json = json.dumps(dataset_meta, indent=4)
                 zip_file.writestr(f"{dataset_id}_metadata.json", metadata_json)
@@ -774,52 +560,152 @@ def dataset_details(request, dataset_id: str) -> HttpResponse:
 
                 # Metadata as HDF5
                 hdf5_buffer = BytesIO()
-                with h5py.File(hdf5_buffer, 'w') as hf:
+                with h5py.File(hdf5_buffer, "w") as hf:
                     for key, value in dataset_meta.items():
                         hf.create_dataset(key, data=str(value))
                 hdf5_buffer.seek(0)
                 zip_file.writestr(f"{dataset_id}_metadata.hdf5", hdf5_buffer.read())
 
+                from datetime import datetime
+
+                # Get the current date and time
+                current_datetime = datetime.now()
+
+                # Format the date and time as MM/DD/YYYY and time in UTC
+                formatted_datetime = current_datetime.strftime('%m/%d/%Y %H:%M:%S UTC')
+
+                # Start building the content string with the header, date, and time
+                content_str = "# This file is provided by *RefXAS* database under DAPHNE4NFDI.\n"
+                content_str += "# For more information, go to http://xafsdb.ddns.net\n"
+                content_str += "# or contact: paripsa@uni-wuppertal.de\n"
+                content_str += f"# Download: {formatted_datetime}\n"
                 # Detailed Metadata as Text
                 # Adding Sample Info section:
-                content_str = "*Sample Info*:\n"
-                content_str += f"    - ID: {dataset_meta.get('id', 'N/A')}\n"
-                content_str += f"    - Dataset Name: {dataset_meta.get('datasetName', 'N/A')}\n"
-                sample_info = dataset_meta['scientificMetadata']['sample_info']
+                content_str += "\n# *Sample Info*:\n"
+                content_str += f"#     - ID: {dataset_meta.get('id', 'N/A')}\n"
+                content_str += (
+                    f"#     - Dataset Name: {dataset_meta.get('datasetName', 'N/A')}\n"
+                )
+                sample_info = dataset_meta["scientificMetadata"]["sample_info"]
                 for key, value in sample_info.items():
                     # Convert the key from snake_case to Title Case
                     title_case_key = snake_case_to_title_case(key)
-                    content_str += f"    - {title_case_key}: {value}\n"
+                    content_str += f"#     - {title_case_key}: {value}\n"
 
                 # Adding Bibliography section:
-                content_str += "\n*Bibliography*:\n"
-                bibliography = dataset_meta['scientificMetadata'].get('bibliography', {})
-                content_str += f"    - Owner: {dataset_meta.get('owner', 'N/A')}\n"
-                content_str += f"    - Institute: {dataset_meta.get('ownerGroup', 'N/A')}\n"
-                content_str += f"    - Contact Email: {dataset_meta.get('contactEmail', 'N/A')}\n"
+                content_str += "# ----------------------------------------------------\n# ----------------------------"
+                content_str += "\n# *Bibliography*:\n"
+                bibliography = dataset_meta["scientificMetadata"].get(
+                    "bibliography", {}
+                )
+                content_str += f"#     - Contact person: {dataset_meta.get('owner', 'N/A')}\n"
+                content_str += (
+                    f"#     - Institute: {dataset_meta.get('ownerGroup', 'N/A')}\n"
+                )
+                content_str += (
+                    f"#     - Contact Email: {dataset_meta.get('contactEmail', 'N/A')}\n"
+                )
                 for key, value in bibliography.items():
                     # Convert the key from snake_case to Title Case
                     title_case_key = snake_case_to_title_case(key)
-                    content_str += f"    - {title_case_key}: {value}\n"
+                    content_str += f"#     - {title_case_key}: {value}\n"
 
                 # Adding Instrument section:
-                content_str += "\n*Instrument*:\n"
-                instrument = dataset_meta['scientificMetadata'].get('instrument', {})
+                content_str += "# ----------------------------------------------------\n# ----------------------------"
+                content_str += "\n# *Instrument*:\n"
+                instrument = dataset_meta["scientificMetadata"].get("instrument", {})
                 for key, value in instrument.items():
                     # Convert the key from snake_case to Title Case
                     title_case_key = snake_case_to_title_case(key)
-                    content_str += f"    - {title_case_key}: {value}\n"
+                    content_str += f"#     - {title_case_key}: {value}\n"
 
-                # Filter Files objects by dataset_id
-                item_list = Files.objects.filter(dataset_id=dataset_id)
-                for item in item_list:
-                    # Ensure there is a file associated with the item
-                    if item.file:
-                        # Reading the file content
-                        item.file.open('r')
-                        file_content = item.file.read()
-                        content_str += f"\nContent of {item.file_name}:\n{file_content}\n"
-                        item.file.close()
+                # Adding QC section:
+                content_str += "# ----------------------------------------------------\n# ----------------------------"
+                content_str += "\n# *Results quality control*:\n"
+                edge_step = (
+                    dataset_meta["keywords"][0] if dataset_meta["keywords"] else "N/A"
+                )
+                content_str += f"#     - Edge step: {edge_step} a.u. \n"
+                k_max = (
+                    dataset_meta["keywords"][1] if dataset_meta["keywords"] else "N/A"
+                )
+                content_str += f"#     - K-max: {k_max} \u212B\u207B\u00B9 \n"
+                energy_resolution = (
+                    dataset_meta["keywords"][2] if dataset_meta["keywords"] else "N/A"
+                )
+                content_str += f"#     - Energy resolution: {energy_resolution} eV\n"
+                try:
+                    edge_energy = (
+                        dataset_meta["keywords"][3]
+                        if dataset_meta["keywords"]
+                        else "N/A"
+                    )
+                except IndexError:
+                    edge_energy = "N/A"
+                content_str += f"#     - Edge energy: {edge_energy} eV\n"
+
+                # Adding Update info:
+                content_str += "# ----------------------------------------------------\n# ----------------------------"
+                content_str += "\n# *Update / Verification Info*:\n# (The following entries have been altered)\n"
+                updated_sample_info = dataset_meta["history"][0][
+                    "updatedscientificMetadata"
+                ].get("sample_info", {})
+                for key, value in updated_sample_info.items():
+                    # Convert the key from snake_case to Title Case
+                    if value != "":
+                        title_case_key = snake_case_to_title_case(key)
+                        content_str += f"#     - {title_case_key}: {value}\n"
+                updated_bibliography = dataset_meta["history"][0][
+                    "updatedscientificMetadata"
+                ].get("bibliography", {})
+                for key, value in updated_bibliography.items():
+                    # Convert the key from snake_case to Title Case
+                    if value != "":
+                        title_case_key = snake_case_to_title_case(key)
+                        content_str += f"#     - {title_case_key}: {value}\n"
+                updated_instrument = dataset_meta["history"][0][
+                    "updatedscientificMetadata"
+                ].get("instrument", {})
+                for key, value in updated_instrument.items():
+                    # Convert the key from snake_case to Title Case
+                    if value != "":
+                        title_case_key = snake_case_to_title_case(key)
+                        content_str += f"#     - {title_case_key}: {value}\n"
+                content_str += (
+                    f"#     - Updated by: {dataset_meta.get('updatedBy', 'N/A')}\n"
+                )
+
+                # Adding data
+                content_str += "# ----------------------------------------------------\n# ----------------------------"
+                content_str += "\n# *Data*:\n"
+                # Assuming content_str and dataset_meta are defined and keywords are stored as JSON strings
+                if len(dataset_meta["keywords"]) > 4:
+                    energy_data = json.loads(dataset_meta["keywords"][4])
+                    mu_data = (
+                        json.loads(dataset_meta["keywords"][5])
+                        if len(dataset_meta["keywords"]) > 5
+                        else []
+                    )
+                    flat_data = (
+                        json.loads(dataset_meta["keywords"][6])
+                        if len(dataset_meta["keywords"]) > 6
+                        else []
+                    )
+
+                    # Prepare to display data side-by-side
+                    data_columns = zip_longest(
+                        energy_data, mu_data, flat_data, fillvalue=""
+                    )
+
+                    # Format data into three columns
+                    formatted_data = [
+                        "{:<20} {:<20} {:<20}".format(*map(str, cols))
+                        for cols in data_columns
+                    ]
+                    formatted_data_str = "\n".join(formatted_data)
+                    content_str += f"# Energy, Mu, Normalized:\n{formatted_data_str}\n"
+                else:
+                    content_str += "#     - Energy/Mu/Normalized: N/A\n"
 
                 zip_file.writestr(f"{dataset_id}_metaData.txt", content_str)
 
@@ -829,7 +715,9 @@ def dataset_details(request, dataset_id: str) -> HttpResponse:
                 for index, encoded_img in enumerate(encoded_images):
                     if encoded_img:
                         # Strip the prefix and decode the base64 string to binary data
-                        img_data = base64.b64decode(encoded_img.split("data:image/jpeg;base64,")[1])
+                        img_data = base64.b64decode(
+                            encoded_img.split("data:image/jpeg;base64,")[1]
+                        )
 
                         # Write the decoded image data to the ZIP file as JPEG images
                         zip_file.writestr(f"plot{index+1}.jpg", img_data)
@@ -887,8 +775,10 @@ def dataset_details(request, dataset_id: str) -> HttpResponse:
                 zip_file.writestr("README_ownership_and_usage_notice.txt", notice_text)
 
             zip_buffer.seek(0)
-            response = HttpResponse(zip_buffer, content_type='application/zip')
-            response['Content-Disposition'] = f'attachment; filename="{dataset_id}_plots_and_meta_data.zip"'
+            response = HttpResponse(zip_buffer, content_type="application/zip")
+            response[
+                "Content-Disposition"
+            ] = f'attachment; filename="{dataset_id}_plots_and_meta_data.zip"'
             return response
 
         item_list: List[Dict[str, str]] = Files.objects.filter(dataset_id=dataset_id)
@@ -903,17 +793,23 @@ def dataset_details(request, dataset_id: str) -> HttpResponse:
         # Iterate over all instruments to extract their beamline names
         for instrument in beamline_list:
             # Safely check if custom_metadata exists and has the 'FACILITY' key
-            if instrument.custom_metadata and 'FACILITY' in instrument.custom_metadata:
-                facility_info = instrument.custom_metadata['FACILITY']
-                beamline_name = facility_info.get('beamline')  # Use .get() for safe access
-                beamline_id = getattr(instrument, 'pid', None)  # Use getattr for safe attribute access
+            if instrument.custom_metadata and "FACILITY" in instrument.custom_metadata:
+                facility_info = instrument.custom_metadata["FACILITY"]
+                beamline_name = facility_info.get(
+                    "beamline"
+                )  # Use .get() for safe access
+                beamline_id = getattr(
+                    instrument, "pid", None
+                )  # Use getattr for safe attribute access
 
                 # Check if both beamline_name and beamline_id are not None
                 if beamline_name and beamline_id:
-                    all_beamline_data.append({'name': beamline_name, 'id': beamline_id})
+                    all_beamline_data.append({"name": beamline_name, "id": beamline_id})
             else:
                 # Optionally handle the case where instrument does not have the expected metadata structure
-                print(f"Instrument {getattr(instrument, 'pid', 'Unknown ID')} does not have the expected custom_metadata structure.")
+                print(
+                    f"Instrument {getattr(instrument, 'pid', 'Unknown ID')} does not have the expected custom_metadata structure."
+                )
 
     return render(
         request,
@@ -925,10 +821,11 @@ def dataset_details(request, dataset_id: str) -> HttpResponse:
             "k_fig": k_fig,
             "R_fig": R_fig,
             "item_list": item_list,
-            #"beamline_name": beamline_name,
+            # "beamline_name": beamline_name,
             "all_beamline_data": all_beamline_data,
         },
     )
+
 
 def dataset_list_curator(request: HttpRequest) -> HttpResponse:
     """
@@ -966,14 +863,16 @@ def dataset_list_curator(request: HttpRequest) -> HttpResponse:
             filter=filter
         )
 
-        page = request.GET.get("page", 1)
-        paginator = Paginator(dataset_meta_list, 15)
-        try:
-            dataset_meta_list = paginator.page(page)
-        except PageNotAnInteger:
-            dataset_meta_list = paginator.page(1)
-        except EmptyPage:
-            dataset_meta_list = paginator.page(paginator.num_pages)
+        # Show every dataset still awaiting curation on one page.
+        # The filter has to happen here, not in the template: the list was
+        # previously paginated first and published entries were hidden
+        # afterwards, so a page holding only published datasets rendered
+        # completely empty (page 1 did, while later pages showed entries).
+        dataset_meta_list = [
+            dataset_meta
+            for dataset_meta in dataset_meta_list
+            if not dataset_meta.get("isPublished")
+        ]
 
     return render(
         request,
@@ -1030,6 +929,180 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
         except IndexError:
             return redirect("error")
 
+        if request.GET.get("download_zip"):
+            zip_buffer = BytesIO()
+
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                # Metadata as JSON
+                metadata_json = json.dumps(dataset_meta, indent=4)
+                zip_file.writestr(f"{dataset_id}_metadata.json", metadata_json)
+
+                # Metadata as YAML
+                metadata_yaml = yaml.dump(dataset_meta)
+                zip_file.writestr(f"{dataset_id}_metadata.yaml", metadata_yaml)
+
+                # Metadata as HDF5
+                hdf5_buffer = BytesIO()
+                with h5py.File(hdf5_buffer, "w") as hf:
+                    for key, value in dataset_meta.items():
+                        hf.create_dataset(key, data=str(value))
+                hdf5_buffer.seek(0)
+                zip_file.writestr(f"{dataset_id}_metadata.hdf5", hdf5_buffer.read())
+
+                # Detailed Metadata as Text
+                # Adding Sample Info section:
+                content_str = "*Sample Info*:\n"
+                content_str += f"    - ID: {dataset_meta.get('id', 'N/A')}\n"
+                content_str += (
+                    f"    - Dataset Name: {dataset_meta.get('datasetName', 'N/A')}\n"
+                )
+                sample_info = dataset_meta["scientificMetadata"]["sample_info"]
+                for key, value in sample_info.items():
+                    # Convert the key from snake_case to Title Case
+                    title_case_key = snake_case_to_title_case(key)
+                    content_str += f"    - {title_case_key}: {value}\n"
+
+                # Adding Bibliography section:
+                content_str += "----------------------------------------------------\n----------------------------"
+                content_str += "\n*Bibliography*:\n"
+                bibliography = dataset_meta["scientificMetadata"].get(
+                    "bibliography", {}
+                )
+                content_str += f"    - Contact person: {dataset_meta.get('owner', 'N/A')}\n"
+                content_str += (
+                    f"    - Institute: {dataset_meta.get('ownerGroup', 'N/A')}\n"
+                )
+                content_str += (
+                    f"    - Contact Email: {dataset_meta.get('contactEmail', 'N/A')}\n"
+                )
+                for key, value in bibliography.items():
+                    # Convert the key from snake_case to Title Case
+                    title_case_key = snake_case_to_title_case(key)
+                    content_str += f"    - {title_case_key}: {value}\n"
+
+                # Adding Instrument section:
+                content_str += "----------------------------------------------------\n----------------------------"
+                content_str += "\n*Instrument*:\n"
+                instrument = dataset_meta["scientificMetadata"].get("instrument", {})
+                for key, value in instrument.items():
+                    # Convert the key from snake_case to Title Case
+                    title_case_key = snake_case_to_title_case(key)
+                    content_str += f"    - {title_case_key}: {value}\n"
+
+                # Adding QC section:
+                content_str += "----------------------------------------------------\n----------------------------"
+                content_str += "\n*Results quality control*:\n"
+                edge_step = (
+                    dataset_meta["keywords"][0] if dataset_meta["keywords"] else "N/A"
+                )
+                content_str += f"    - Edge step: {edge_step}\n"
+                k_max = (
+                    dataset_meta["keywords"][1] if dataset_meta["keywords"] else "N/A"
+                )
+                content_str += f"    - K-max: {k_max}\n"
+                energy_resolution = (
+                    dataset_meta["keywords"][2] if dataset_meta["keywords"] else "N/A"
+                )
+                content_str += f"    - Energy resolution: {energy_resolution}\n"
+                try:
+                    edge_energy = (
+                        dataset_meta["keywords"][3]
+                        if dataset_meta["keywords"]
+                        else "N/A"
+                    )
+                except IndexError:
+                    edge_energy = "N/A"
+                content_str += f"    - Edge energy: {edge_energy}\n"
+
+                # Filter Files objects by dataset_id
+                item_list = Files.objects.filter(dataset_id=dataset_id)
+                for item in item_list:
+                    # Ensure there is a file associated with the item
+                    if item.file:
+                        # Reading the file content
+                        item.file.open("r")
+                        file_content = item.file.read()
+                        content_str += (
+                            f"\nContent of {item.file_name}:\n{file_content}\n"
+                        )
+                        item.file.close()
+
+                zip_file.writestr(f"{dataset_id}_metaData.txt", content_str)
+
+                # List of your base64 encoded image strings with the prefix
+                encoded_images = [raw_data_fig, normalized_data_fig, k_fig, R_fig]
+
+                for index, encoded_img in enumerate(encoded_images):
+                    if encoded_img:
+                        # Strip the prefix and decode the base64 string to binary data
+                        img_data = base64.b64decode(
+                            encoded_img.split("data:image/jpeg;base64,")[1]
+                        )
+
+                        # Write the decoded image data to the ZIP file as JPEG images
+                        zip_file.writestr(f"plot{index+1}.jpg", img_data)
+
+                # README content:
+                content_text = (
+                    "*Content description:*\n"
+                    "\n"
+                    "This zipfile contains 10 files (including this one):\n"
+                    "\n"
+                    "*1. README_FIRST*\n"
+                    "\n"
+                    "*2. README_ownership_and_usage_notice*\n"
+                    "General information and usage\n"
+                    "\n"
+                    "*3. PID..._metaData.txt*\n"
+                    "Contains all metadata from this dataset - HUMAN READABLE\n"
+                    "+ content of the original datafile - including the values.\n"
+                    "\n"
+                    "*4. PID..._metadata.hdf5*\n"
+                    "Contains all metadata. Format: hdf5 - MACHINE READABLE\n"
+                    "\n"
+                    "*5. PID..._metadata.json*\n"
+                    "Contains all metadata. Format: json - MACHINE READABLE\n"
+                    "\n"
+                    "*6. PID..._metadata.yaml*\n"
+                    "Contains all metadata. Format: yaml - MACHINE READABLE\n"
+                    "\n"
+                    "*7. plot1.jpg*\n"
+                    "JPEG image of the Raw XAFS\n"
+                    "\n"
+                    "*8. plot2.jpg*\n"
+                    "JPEG image of the Normalized XAFS\n"
+                    "\n"
+                    "*9. plot3.jpg*\n"
+                    "JPEG image of Chi(k)\n"
+                    "\n"
+                    "*9. plot4.jpg*\n"
+                    "JPEG image of Chi(R)\n"
+                    "\n"
+                    "NOTE: The size of all image windows can be changed!"
+                )
+                zip_file.writestr("README_FIRST.txt", content_text)
+
+                # Ownership and usage notice text
+                notice_text = (
+                    "Thank you for using RefXAS.\n"
+                    "Please be aware, do not misuse the data, cite properly when you use this data\n"
+                    "and please always cite RefXAS!\n"
+                    "For any questions, please write to paripsa@uni-wuppertal.de\n"
+                    "\n"
+                    "Thank you for supporting the RefXAS community."
+                )
+                # Write the notice text as a .txt file to the ZIP
+                zip_file.writestr("README_ownership_and_usage_notice.txt", notice_text)
+
+            zip_buffer.seek(0)
+            response = HttpResponse(zip_buffer, content_type="application/zip")
+            response[
+                "Content-Disposition"
+            ] = f'attachment; filename="{dataset_id}_plots_and_meta_data.zip"'
+            return response
+
+        item_list: List[Dict[str, str]] = Files.objects.filter(dataset_id=dataset_id)
+
     return render(
         request,
         "landing/base_curator.html",
@@ -1041,6 +1114,11 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
             "R_fig": R_fig,
         },
     )
+
+
+def get_element_map():
+    with open(settings.BASE_DIR / "materials/element_list.json") as file:
+        return json.load(file)
 
 
 class SearchView(TemplateView):
@@ -1064,23 +1142,97 @@ class SearchView(TemplateView):
             A dictionary of context data for rendering the template.
         """
 
-        context: Dict[str, Any] = super().get_context_data(**kwargs)
-        request: HttpRequest = self.request
-        term: str = request.GET.get("term")
-        paginated_by: int = 10
+        context = super().get_context_data(**kwargs)
+        request = self.request
+        term = request.GET.get("term", "")
+        element_filter = request.GET.get("element_filter", "")
 
         allDatasets: List[Dict[str, Any]] = get_all_datasets()
         datasetList: List[Dict[str, Any]] = []
-        for title in allDatasets:
-            term_checker(title, term, datasetList)
+        element_counts = defaultdict(int)  # To store counts of each element
+        element_filter = request.GET.get(
+            "element_filter", ""
+        )  # New parameter for element filtering
 
-        paginator: Paginator = Paginator(datasetList, paginated_by)
-        page: str = self.request.GET.get("page")
+        ## Define your element map
+        # element_map = get_element_map()
+        # for dataset in allDatasets:
+        #    dataset_element = dataset['scientificMetadata']['instrument']['element_input']
+        #    dataset_element_lower = dataset_element.lower()  # Convert to lowercase for case-insensitive matching
+        #
+        #    if term.lower() in dataset_element_lower:
+        #        for symbol, element in element_map.items():
+        #            # Use a regular expression to search for full symbol matches only
+        #            # The pattern \b defines a word boundary, ensuring only complete matches are considered
+        #            if re.search(r'\b' + re.escape(symbol) + r'\b', dataset_element_lower):
+        #                element_counts[element] += 1
+        #                if element_filter.lower() == element.lower() or not element_filter:
+        #                    datasetList.append(dataset)
+        ##################################################################
+        ### Search and count logic
+        ##################################################################
+        if term:
+            for dataset in allDatasets:
+                term_checker(dataset, term, datasetList)
+            # Further refine by element if specified:
+            if element_filter:
+                refined_list = [
+                    dataset
+                    for dataset in datasetList
+                    if self.element_matches_filter(
+                        dataset, element_filter, element_counts
+                    )
+                ]
+                datasetList = refined_list
+        else:
+            for dataset in allDatasets:
+                self.element_matches_filter(
+                    dataset, element_filter, element_counts, datasetList
+                )
+
+        # Pagination handling
+        paginated_by = 10
+        paginator = Paginator(datasetList, paginated_by)
+        page = request.GET.get("page")
         datasetList = paginator.get_page(page)
 
+        # Adding element counts to context
         context["datasetList"] = datasetList
+        context["elementCounts"] = dict(element_counts)
+        context["element_filter"] = element_filter
 
         return context
+
+    def element_matches_filter(
+        self,
+        dataset: Dict[str, Any],
+        element_filter: str,
+        element_counts: defaultdict,
+        datasetList=None,
+    ) -> bool:
+        """
+        Checks if the dataset's element matches the filter and counts it if it does.
+
+        Args:
+            dataset (Dict[str, Any]): The dataset to check.
+            element_filter (str): The active element filter.
+            element_counts (defaultdict): A dictionary to count occurrences of elements.
+            datasetList (List[Dict[str, Any]], optional): List to append dataset if it matches.
+
+        Returns:
+            bool: True if the dataset matches the element filter, otherwise False.
+        """
+        dataset_element = dataset["scientificMetadata"]["instrument"][
+            "element_input"
+        ].lower()
+        for symbol, element in get_element_map().items():
+            if re.search(r"\b" + re.escape(symbol) + r"\b", dataset_element):
+                element_counts[element] += 1
+                if element_filter.lower() == element.lower() or not element_filter:
+                    if datasetList is not None:
+                        datasetList.append(dataset)
+                    return True
+        return False
 
 
 class FileViewSets(ModelViewSet):
@@ -1103,6 +1255,7 @@ class FileViewSets(ModelViewSet):
         Returns the serializer class to use for the current request, depending
         on the HTTP method used.
     """
+
     queryset: Type[Files] = Files.objects.all()
     serializer_class: Type[FileSerializer] = FileSerializer
     parser_classes = [MultiPartParser, FileUploadParser]
@@ -1194,7 +1347,7 @@ def permission_denied(request, exception):
     )
 
 
-def error(request: HttpRequest, exception: Exception = None) -> HttpResponse:
+def error(request: HttpRequest, exception: Exception) -> HttpResponse:
     """
     View for rendering an error page when an exception is raised.
 
@@ -1224,43 +1377,31 @@ class ContactForm(forms.Form):
         # Render the form with error messages
         ...
     """
-    first_name = forms.CharField(required=False, max_length=50, label="First name",
-                                 widget=forms.TextInput(attrs={'style': 'color: black;'}))
-    last_name = forms.CharField(required=True, max_length=50, label="Last name",
-                                widget=forms.TextInput(attrs={'style': 'color: black;'}))
+
+    first_name = forms.CharField(
+        required=False,
+        max_length=50,
+        label="First name",
+        widget=forms.TextInput(attrs={"style": "color: black;"}),
+    )
+    last_name = forms.CharField(
+        required=True,
+        max_length=50,
+        label="Last name",
+        widget=forms.TextInput(attrs={"style": "color: black;"}),
+    )
     email_address = forms.EmailField(
-        required=True, max_length=150, label="Email address",
-        widget=forms.EmailInput(attrs={'style': 'color: black;'})
+        required=True,
+        max_length=150,
+        label="Email address",
+        widget=forms.EmailInput(attrs={"style": "color: black;"}),
     )
     message = forms.CharField(
-        widget=forms.Textarea(attrs={'style': 'color: black;'}),
-        required=True, max_length=2000, label="Your message"
+        widget=forms.Textarea(attrs={"style": "color: black;"}),
+        required=True,
+        max_length=2000,
+        label="Your message",
     )
-
-
-
-def contact(request) -> HttpResponse:
-    """Preserve StateJun /contact behavior while V5 also provides /team_contact."""
-    if request.method == "POST":
-        form = ContactForm(request.POST)
-        if form.is_valid():
-            subject = "Website Inquiry"
-            body = {
-                "first_name": form.cleaned_data["first_name"],
-                "last_name": form.cleaned_data["last_name"],
-                "email": form.cleaned_data["email_address"],
-                "message": form.cleaned_data["message"],
-            }
-            message = "\n".join(body.values())
-
-            try:
-                send_mail(subject, message, EMAIL_HOST_USER, [EMAIL_HOST_USER])
-            except BadHeaderError:
-                return HttpResponse("Invalid header found.")
-            return redirect("thank_you")
-
-    form = ContactForm()
-    return render(request, "landing/contact.html", {"form": form})
 
 
 def team_contact(request) -> HttpResponse:
@@ -1291,10 +1432,26 @@ def team_contact(request) -> HttpResponse:
 
     # Team description data
     team_description = [
-        {'name': 'Sebastian Paripsa', 'role': 'Developer', 'contact': 'paripsa@uni-wuppertal.de'},
-        {'name': 'Abhijeet Gaur', 'role': 'Senior Scientist', 'contact': ' abhijeet.gaur@kit.edu'},
-        {'name': 'Frank Foerste', 'role': 'Developer', 'contact': 'ffoerste@physik.tu-berlin.de'},
-        {'name': 'Christopher Schlesiger', 'role': 'Scientist', 'contact': ' christopher.schlesiger@tu-berlin.de'},
+        {
+            "name": "Sebastian Paripsa",
+            "role": "Developer",
+            "contact": "paripsa@uni-wuppertal.de",
+        },
+        {
+            "name": "Abhijeet Gaur",
+            "role": "Senior Scientist",
+            "contact": " abhijeet.gaur@kit.edu",
+        },
+        {
+            "name": "Frank Foerste",
+            "role": "Developer",
+            "contact": "ffoerste@physik.tu-berlin.de",
+        },
+        {
+            "name": "Christopher Schlesiger",
+            "role": "Scientist",
+            "contact": " christopher.schlesiger@tu-berlin.de",
+        },
     ]
 
     # Handle contact form submission
@@ -1324,252 +1481,3 @@ def team_contact(request) -> HttpResponse:
     }
 
     return render(request, "landing/team_contact.html", context)
-
-
-
-# -----------------------------------------------------------------------------
-# Real refXAS robust filename detector safe override
-# Purpose:
-#   Improve Element / Edge auto-selection for .h5, .hdf5, .nxs and .nexus files.
-#
-# Examples:
-#   PtO2_0001.hdf5              -> Element Pt, Edge L3
-#   PtO2_0001.nxs               -> Element Pt, Edge L3
-#   Ti-foil_K-edge_293K.dat     -> Element Ti, Edge K
-#   Co_foil_Co_K_0000.xdi       -> Element Co, Edge K
-#   Au foil_Au L3_180.xdi       -> Element Au, Edge L3
-# -----------------------------------------------------------------------------
-
-import re as _real_refxas_safe_re
-from pathlib import Path as _RealRefXASSafePath
-
-_REAL_REFXAS_SAFE_ELEMENTS = [
-    "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
-    "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
-    "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
-    "Ga", "Ge", "As", "Se", "Br", "Kr",
-    "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
-    "In", "Sn", "Sb", "Te", "I", "Xe",
-    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy",
-    "Ho", "Er", "Tm", "Yb", "Lu",
-    "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
-    "Tl", "Pb", "Bi", "Po", "At", "Rn",
-    "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu",
-]
-
-_REAL_REFXAS_SAFE_ELEMENT_SET = set(_REAL_REFXAS_SAFE_ELEMENTS)
-_REAL_REFXAS_SAFE_ATOMIC_NUMBER = {
-    symbol: index + 1 for index, symbol in enumerate(_REAL_REFXAS_SAFE_ELEMENTS)
-}
-
-
-def _real_refxas_normalize_element_symbol(value):
-    if not value:
-        return ""
-
-    value = str(value).strip()
-    value = value.replace("_", " ").replace("-", " ")
-    token = value.split()[0] if value.split() else value
-
-    for length in (2, 1):
-        candidate = token[:length]
-
-        if not candidate:
-            continue
-
-        normalized = candidate[0].upper() + candidate[1:].lower()
-
-        if normalized in _REAL_REFXAS_SAFE_ELEMENT_SET:
-            return normalized
-
-    return ""
-
-
-def _real_refxas_default_edge_for_element(element):
-    if not element:
-        return ""
-
-    z_number = _REAL_REFXAS_SAFE_ATOMIC_NUMBER.get(element)
-
-    if not z_number:
-        return ""
-
-    # Heavy elements usually use L edges in common XAS examples.
-    if z_number >= 57:
-        return "L3"
-
-    return "K"
-
-
-def _real_refxas_detect_edge_from_text(text_value):
-    if not text_value:
-        return ""
-
-    text_value = str(text_value)
-
-    edge_patterns = [
-        ("L3", r"(?i)(?:^|[^A-Za-z0-9])L[\s_\-]*3(?:[\s_\-]*edge)?(?:$|[^A-Za-z0-9])"),
-        ("L2", r"(?i)(?:^|[^A-Za-z0-9])L[\s_\-]*2(?:[\s_\-]*edge)?(?:$|[^A-Za-z0-9])"),
-        ("L1", r"(?i)(?:^|[^A-Za-z0-9])L[\s_\-]*1(?:[\s_\-]*edge)?(?:$|[^A-Za-z0-9])"),
-        ("K", r"(?i)(?:^|[^A-Za-z0-9])K(?:[\s_\-]*edge)?(?:$|[^A-Za-z0-9])"),
-    ]
-
-    for edge, pattern in edge_patterns:
-        if _real_refxas_safe_re.search(pattern, text_value):
-            return edge
-
-    return ""
-
-
-def _real_refxas_detect_element_from_filename(file_name):
-    if not file_name:
-        return ""
-
-    stem = _RealRefXASSafePath(str(file_name)).stem
-    tokens = _real_refxas_safe_re.split(r"[\s_\-\.]+", stem)
-
-    ignore_tokens = {
-        "foil", "sample", "scan", "edge", "highres", "data", "raw",
-        "energy", "mono", "position", "defined", "test", "reference"
-    }
-
-    # 1. Exact element tokens from filename.
-    for token in tokens:
-        if not token:
-            continue
-
-        if token.lower() in ignore_tokens:
-            continue
-
-        if token.upper() in {"K", "L1", "L2", "L3"}:
-            continue
-
-        element = _real_refxas_normalize_element_symbol(token)
-
-        if element:
-            return element
-
-    # 2. Compound-style first token, e.g. PtO2, Fe2O3, CoO.
-    first_token = tokens[0] if tokens else stem
-    compound_match = _real_refxas_safe_re.match(r"^([A-Z][a-z]?)(?:[A-Z0-9]|$)", first_token)
-
-    if compound_match:
-        element = _real_refxas_normalize_element_symbol(compound_match.group(1))
-
-        if element:
-            return element
-
-    return ""
-
-
-def _real_refxas_detect_element_edge_from_name(file_name):
-    element = _real_refxas_detect_element_from_filename(file_name)
-    edge = _real_refxas_detect_edge_from_text(file_name)
-
-    return {
-        "Element": element,
-        "Edge": edge,
-        "ElementEdgeAutoSource": "filename",
-    }
-
-
-def _real_refxas_detect_element_edge_from_header(dictionary):
-    result = {
-        "Element": "",
-        "Edge": "",
-        "ElementEdgeAutoSource": "header",
-    }
-
-    if not dictionary:
-        return result
-
-    for key in ["Element", "element", "Absorbing element", "absorbing_element", "element_input"]:
-        if key in dictionary:
-            element = _real_refxas_normalize_element_symbol(dictionary.get(key))
-
-            if element:
-                result["Element"] = element
-                break
-
-    for key in ["Edge", "edge", "Absorption edge", "absorption_edge", "edge_input"]:
-        if key in dictionary:
-            edge = _real_refxas_detect_edge_from_text(dictionary.get(key))
-
-            if edge:
-                result["Edge"] = edge
-                break
-
-    header_text = ""
-
-    for key in ["Header_str", "Header"]:
-        value = dictionary.get(key)
-
-        if isinstance(value, list):
-            header_text += "\n".join(str(item) for item in value)
-        elif value:
-            header_text += "\n" + str(value)
-
-    if not result["Element"]:
-        element_match = _real_refxas_safe_re.search(
-            r"(?im)^\s*(?:#\s*)?(?:element|absorbing\s+element)\s*[:=]\s*([A-Z][a-z]?)\b",
-            header_text,
-        )
-
-        if element_match:
-            result["Element"] = _real_refxas_normalize_element_symbol(element_match.group(1))
-
-    if not result["Edge"]:
-        edge_match = _real_refxas_safe_re.search(
-            r"(?im)^\s*(?:#\s*)?(?:edge|absorption\s+edge)\s*[:=]\s*(K|L[\s_\-]*1|L[\s_\-]*2|L[\s_\-]*3)\b",
-            header_text,
-        )
-
-        if edge_match:
-            result["Edge"] = _real_refxas_detect_edge_from_text(edge_match.group(1))
-
-    return result
-
-
-def _real_refxas_enrich_element_edge(dataset_name, dictionary):
-    if dictionary is None:
-        dictionary = {}
-
-    filename_result = _real_refxas_detect_element_edge_from_name(dataset_name)
-    header_result = _real_refxas_detect_element_edge_from_header(dictionary)
-
-    existing_element = _real_refxas_normalize_element_symbol(dictionary.get("Element", ""))
-    existing_edge = _real_refxas_detect_edge_from_text(dictionary.get("Edge", ""))
-
-    element = (
-        filename_result.get("Element")
-        or header_result.get("Element")
-        or existing_element
-        or ""
-    )
-
-    edge = (
-        filename_result.get("Edge")
-        or header_result.get("Edge")
-        or existing_edge
-        or _real_refxas_default_edge_for_element(element)
-        or ""
-    )
-
-    if element:
-        dictionary["Element"] = element
-
-    if edge:
-        dictionary["Edge"] = edge
-
-    if element or edge:
-        dictionary["ElementEdgeAutoNote"] = (
-            f"Auto-detected Element={element or 'not detected'}, "
-            f"Edge={edge or 'not detected'} from filename/header. "
-            "Please verify before final submission."
-        )
-
-    return dictionary
-
-# End Real refXAS robust filename detector safe override
-# -----------------------------------------------------------------------------
-

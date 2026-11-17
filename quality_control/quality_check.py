@@ -27,8 +27,8 @@ plt.ioff()
 use_originpo_style = True
 if use_originpo_style:
     plt.rcParams['font.family'] = 'sans-serif'
-    plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Liberation Sans', 'sans-serif']
-    plt.rcParams['font.size'] = 11
+    plt.rcParams['font.sans-serif'] = ['Arial']
+    plt.rcParams['font.size'] = 12
     plt.rcParams['axes.linewidth'] = 1.1
     plt.rcParams['axes.labelpad'] = 10.0
     plot_color_cycle = plt.cycler('color', ['000000', '0000FE', 'FE0000', '008001', 'FD8000', '8c564b', 
@@ -38,11 +38,11 @@ if use_originpo_style:
     plt.rcParams['axes.xmargin'] = 0
     plt.rcParams['axes.ymargin'] = 0
     plt.rcParams["legend.markerscale"] = 0.8
-    plt.rcParams["legend.fontsize"] = "small"
+    plt.rcParams["legend.fontsize"] = "9"
     plt.rcParams["legend.loc"] = "best"
-    plt.rcParams.update({"figure.figsize" : (11.0, 7.0),
+    plt.rcParams.update({"figure.figsize" : (9.0, 5.5),
                      "figure.subplot.left" : 0.177, "figure.subplot.right" : 0.946,
-                     "figure.subplot.bottom" : 0.22, "figure.subplot.top" : 0.90,
+                     "figure.subplot.bottom" : 0.156, "figure.subplot.top" : 0.965,
                      "axes.autolimit_mode" : "round_numbers",
                      "xtick.major.size"     : 7,
                      "xtick.minor.size"     : 3.5,
@@ -65,17 +65,48 @@ else:
     plt.rcParams["ytick.direction"] = "in"
     plt.rcParams["ytick.right"] = True
     plt.rcParams["axes.grid.which"] = "both"
-    plt.rcParams["font.size"] = 12
-    plt.rcParams["font.weight"] = "normal"
-    plt.rcParams["font.family"] = "DejaVu Sans"
+    plt.rcParams["font.size"] = 20
+    plt.rcParams["font.weight"] = "bold"
+    plt.rcParams["font.family"] = "Arial"
     plt.rcParams["grid.alpha"] = 0
-    plt.rcParams["lines.linewidth"] = 1.8
-    plt.rcParams["lines.markersize"] = 7
-    plt.rcParams.update({"figure.figsize" : (11.0, 7.0)})
+    plt.rcParams["lines.linewidth"] = 2.5
+    plt.rcParams["lines.markersize"] = 16
+    plt.rcParams.update({"figure.figsize" : (10, 6.25)})
 
 ############################################
 # define quality check and testing feature #
 ############################################
+
+def _resolve_edge_for_qc(e0, element=None, edge=None):
+    from math import isfinite
+    try:
+        energy = float(e0)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("No valid edge energy was detected. Check the energy and signal columns.")
+    if not isfinite(energy) or energy <= 0:
+        raise ValueError("No valid edge energy was detected. Check the energy column and its units.")
+    try:
+        pair = (element, edge) if element else xray.guess_edge(energy)
+    except (AttributeError, TypeError, ValueError, KeyError):
+        pair = None
+    if (not isinstance(pair, (tuple, list)) or len(pair) != 2
+            or not all(isinstance(value, str) and value.strip() for value in pair)):
+        raise ValueError("No supported element and edge could be identified. Check the energy column, units and sample signal.")
+    pairs = [(pair[0], "M4"), (pair[0], "M5")] if pair[1] == "M4,5" else [tuple(pair)]
+    candidates = []
+    for symbol, label in pairs:
+        try:
+            record = xray.xray_edge(symbol, label)
+            edge_energy = float(record[0])
+        except (AttributeError, TypeError, ValueError, KeyError, IndexError, OverflowError):
+            continue
+        if isfinite(edge_energy) and edge_energy > 0:
+            candidates.append(((symbol, label), edge_energy))
+    if not candidates:
+        raise ValueError("The element/edge combination is unavailable. Check the selection or use automatic detection.")
+    return min(candidates, key=lambda item: abs(energy - item[1]))
+
+
 class CheckQuality(object):
     """
     This class implements the automated routines to check the quality criteria
@@ -83,9 +114,17 @@ class CheckQuality(object):
     https://xraypy.github.io/xraylarch/
     """
 
-    def __init__(self, quality_criteria_json, verbose = False):
+    def __init__(self, quality_criteria_json, verbose = False, element=None, edge=None):
         
         self.verbose = verbose
+        if element is not None and not isinstance(element, str):
+            raise ValueError("Element must be a chemical symbol.")
+        if edge is not None and not isinstance(edge, str):
+            raise ValueError("Edge must be an edge label.")
+        self.requested_element = (element or "").strip().capitalize() or None
+        self.requested_edge = (edge or "").strip().upper() or None
+        if bool(self.requested_element) != bool(self.requested_edge):
+            raise ValueError("Select both element and edge, or leave both automatic.")
         if self.verbose:
             print("+++++++++++++++++++++++++++++++++++++++++")
             print("+ quality criteria function initialized +")
@@ -174,35 +213,47 @@ class CheckQuality(object):
             (as in Larch). The default is False.
         """
         # find the edge energy E0 of the absorption data
-        self.find_e0(self.data.energy, 
+        e0_test = self.find_e0(self.data.energy,
+                     self.data.mu,
+                     group=None,
+                     take_first=take_first)
+        print(f"uncalibrated edge energy on sample: {e0_test}")
+        self.find_e0(self.data.energy,
                      self.data.mu_ref,
                      group=self.data,
                      take_first=take_first)
+        print(f"uncalibrated edge energy: {self.data.e0}")
         # xafs.find_e0(self.data.energy, self.data.mu, group=self.data)
         # perform an energy calibration
         # for this guess the element edge and retrieve the edge energy from
         # the database of larch mostly based on Elam
         # https://xraypy.github.io/xraylarch/xray.html
-        element_n_edge = xray.guess_edge(self.data.e0)
-        edge_E_DB = xray.xray_edge(*element_n_edge)[0]
+        element_n_edge, edge_E_DB = _resolve_edge_for_qc(
+            self.data.e0, self.requested_element, self.requested_edge
+        )
+        print(f"detected edge: {element_n_edge} at energy: {edge_E_DB}")
         self.data.E_difference = self.data.e0 - edge_E_DB
+        print(f"detected spectrometer energy shift: {self.data.E_difference}")
         self.data.energy -= (self.data.e0 - edge_E_DB)
         # find the edge energy after the shift again for both reference and
         # sample in order to calculate the edge shift for oxides
-        self.e0_ref = self.find_e0(
-            self.data.energy, 
-            self.data.mu_ref,
-            group=None,
-            take_first=take_first)
         self.e0_sample = self.find_e0(
             self.data.energy, 
             self.data.mu,
             group=None,
             take_first=take_first)
+        self.e0_ref = self.find_e0(
+            self.data.energy, 
+            self.data.mu_ref,
+            group=self.data,
+            take_first=take_first)
+        print(f"detected e0 reference: {self.e0_ref} eV")
+        print(f"detected e0 sample: {self.e0_sample} eV")
         # calculate the edge shift
-        self.edge_shift = self.e0_ref - self.e0_sample
+        self.edge_shift = self.e0_sample - self.e0_ref
         print(f"detected edge shift of {self.edge_shift} eV")
         # retrieve the array index of E0 to determine low cut energy
+
         edge_index = np.argmin(np.abs(self.data.energy-self.data.e0))
         cut_index = edge_index - 150
         # if the data below edge is not sufficient, set index to 0 to avoid
@@ -305,13 +356,18 @@ class CheckQuality(object):
         high_deriv_pts = np.where(dmu >  maxdmu*0.1)[0]
         high_deriv_pts = high_deriv_pts[dmu[high_deriv_pts] > np.mean(dmu[high_deriv_pts])]
         maxima_indices = argrelextrema(dmu[high_deriv_pts], np.greater)
-        # Access the values at the maxima indices
-        if take_first:
-            e0_idx = np.take(high_deriv_pts[maxima_indices], 0)
-            e0 = energy[e0_idx]
+        local_maxima = high_deriv_pts[maxima_indices]
+        # Robust fallback for spectra where no local maximum survives filtering.
+        if local_maxima.size == 0:
+            search = dmu[nmin:-nmin] if len(dmu) > (2 * nmin) else dmu
+            offset = nmin if len(dmu) > (2 * nmin) else 0
+            e0_idx = int(np.argmax(search)) + offset
+        elif take_first:
+            e0_idx = int(local_maxima[0])
         else:
-            e0_idx = np.max(high_deriv_pts[maxima_indices])
-            e0 = energy[e0_idx]
+            # Preserve larch202530's later-local-maximum behavior when candidates exist.
+            e0_idx = int(np.max(local_maxima))
+        e0 = energy[e0_idx]
         if group:
             group.e0 = e0
         return e0
@@ -340,7 +396,7 @@ class CheckQuality(object):
         """
         
         # define figure
-        self.fig_data = plt.figure(f"{data_type} {self.name}", figsize=(11.0, 7.0), constrained_layout=True)
+        self.fig_data = plt.figure(f"{data_type} {self.name}")
         self.fig_data.clf()
         self.ax_data = self.fig_data.subplots()
         self.ax_data.grid()
@@ -350,7 +406,7 @@ class CheckQuality(object):
         major_ticks_xanes = np.arange(int(np.round(self.data.energy[0], decimals=-1)), int(self.data.energy[-1]), 20)
         minor_ticks_xanes = np.arange(int(np.round(self.data.energy[0], decimals=-1)), int(self.data.energy[-1]), 10)
         # legend location
-        loc = 'lower right'
+        loc = 'best'
         # plot data depending on type
         if data_type == 'RAW' or data_type == "BACKGROUND":
             # plotting
@@ -363,8 +419,12 @@ class CheckQuality(object):
                               color="#003161")
             self.ax_data.plot(self.data.e0,
                               self.data.mu[np.where(self.data.e0 == self.data.energy)],
-                              marker="*", color="#69398B", lw=0,
-                              label="Edge Position",)
+                              marker="1", color="#69398B", lw=0,
+                              label="Reference Edge Position",)
+            self.ax_data.plot(self.e0_sample,
+                              self.data.mu[np.where(self.e0_sample == self.data.energy)],
+                              marker="2", color="#69398B", lw=0,
+                              label="Sample Edge Position",)
             # if background shall be plotted
             if data_type == "BACKGROUND":
                 if show_name:
@@ -396,8 +456,12 @@ class CheckQuality(object):
                               color="#003161")
             self.ax_data.plot(self.data.e0,
                               self.data.flat[np.where(self.data.e0 == self.data.energy)],
-                              marker="*", color="#69398B", lw=0,
-                              label="Edge Position",)
+                              marker="1", color="#69398B", lw=0,
+                              label="Reference Edge Position",)
+            self.ax_data.plot(self.e0_sample,
+                              self.data.flat[np.where(self.e0_sample == self.data.energy)],
+                              marker="2", color="red", lw=0,
+                              label="Sample Edge Position",)
             # labelling
             self.ax_data.set_xlabel(r"Energy | eV")
             self.ax_data.set_ylabel(r"$\mu (E)$ | a.u.")
@@ -464,52 +528,16 @@ class CheckQuality(object):
             loc = 'upper right'
             # self.ax_data.set_xlim(self.data.r[0], self.data.r[-1])
         # set title
-        # Real refXAS curator-friendly plot formatting.
-        # Keep scientific values unchanged, only improve display readability.
         if show_name:
-            short_title = str(self.name)
-            if len(short_title) > 75:
-                short_title = short_title[:72] + "..."
-            self.ax_data.set_title(short_title, fontsize=12, fontweight="normal", pad=14)
-
-        # Reduce crowded x-axis labels, especially for RAW/XANES energy plots.
-        try:
-            x0, x1 = self.ax_data.get_xlim()
-            if x1 > x0:
-                self.ax_data.set_xticks(np.linspace(x0, x1, 7))
-        except Exception:
-            pass
-
-        self.ax_data.tick_params(axis="x", which="major", labelsize=10, rotation=0, pad=6)
-        self.ax_data.tick_params(axis="y", which="major", labelsize=10, pad=6)
-        self.ax_data.tick_params(axis="both", which="minor", length=3)
-
-        self.ax_data.set_xlabel(self.ax_data.get_xlabel(), fontsize=12, fontweight="normal", labelpad=10)
-        self.ax_data.set_ylabel(self.ax_data.get_ylabel(), fontsize=12, fontweight="normal", labelpad=10)
-
-        # Put legend below the plot so it does not cover the spectrum.
-        handles, labels = self.ax_data.get_legend_handles_labels()
-        if handles:
-            self.ax_data.legend(
-                loc="upper center",
-                bbox_to_anchor=(0.5, -0.14),
-                frameon=False,
-                fontsize=9,
-                ncol=1,
-            )
-
-        self.ax_data.grid(False)
-
-        try:
-            self.fig_data.tight_layout()
-        except Exception:
-            pass
-
+            self.ax_data.set_title(self.name)
+        # set legend
+        self.ax_data.legend(loc=loc)
+        self.fig_data.tight_layout()
         # show figure if desired
         if show:
             self.fig_data.show()
         if save_path:
-            self.fig_data.savefig(save_path, dpi=220, bbox_inches="tight")
+            self.fig_data.savefig(save_path, dpi=300)
         return self.fig_data
     
     def check_edge_step(self, ):
@@ -661,7 +689,7 @@ class CheckQuality(object):
 
         """
         buffer = io.BytesIO()
-        figure.savefig(buffer, format="jpeg", dpi=220, bbox_inches="tight")
+        figure.savefig(buffer, format="jpeg", dpi=300)
         data = base64.b64encode(buffer.getbuffer()).decode("ascii")
         return f"data:image/jpeg;base64,{data}"
 
@@ -824,16 +852,23 @@ class CheckQualityControl(object):
         #     folder = '/home/frank/Doktorarbeit/DAPHNE/xafsdb_webserver/quality_control/example data/SYNCHROTRON/'
         #     files = sorted(glob(folder+'*'))[1:2]
         # else: files = self.files
-        files = self.files
+        if self.files is None:
+            example_dir = Path(__file__).parent / "example data" / self.facility_type
+            files = [
+                item for item in sorted(example_dir.iterdir())
+                if item.is_file() and "gitkeep" not in item.name and item.suffix.lower() != ".zip"
+            ]
+        else:
+            files = [Path(item) for item in self.files]
         # initialize the CheckQuality class
         self.cq = CheckQuality(quality_criteria_json=cq_json, verbose=self.verbose)
         # analyse the quality for each file in the files list
         for file in files:
             if self.verbose:
                 print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-                print('working on {}'.format(file.split('/')[-1]))
+                print('working on {}'.format(file.name))
                 print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-                print("file:\t", file.split('/')[-1])
+                print("file:\t", file.name)
             # transform the name variable corresponding to the host sys.platform
             self.name = file.stem
             # initialize the quality control list to store quality data of
@@ -848,10 +883,11 @@ class CheckQualityControl(object):
                 print('guessed element and edge: ', self.cq.data.element_n_edge)
                 print('E0: {:.0f}eV'.format(self.cq.data.e0))
                 print('k-range: {:.1f}-{:.1f}'.format(self.cq.kmin, self.cq.kmax))
-            if self.save_figure_path: show = False
+            if self.save_figure_path:
+                show = False
             else:
-                show = True
-                save_path= None
+                show = not self.plot_quiet
+                save_path = None
             
             if self.plot_raw_data:
                 if self.save_figure_path: save_path = self.save_figure_path+'/RAW/{}_RAW.png'.format(self.name)
@@ -870,7 +906,7 @@ class CheckQualityControl(object):
                 self.fig_normalized_data_base64 = self.cq.encode_base64_figure(self.fig_normalized_data)
                 image_data = self.cq.decode_base64_figure(base64_string=self.fig_normalized_data_base64)
             if self.plot_k:
-                if self.save_figure_path: save_path = self.save_figure_path+'/k/{}_k.png'.format(self.ame)
+                if self.save_figure_path: save_path = self.save_figure_path+'/k/{}_k.png'.format(self.name)
                 self.fig_k = self.cq.plot_data(data_type='k',
                                                show_name=False, 
                                                show=show, 
@@ -906,6 +942,13 @@ class CheckQualityControl(object):
                     print("data not matchs all quality criteria, please check")
             self.cq.first_shell_fit()
         return self.cq.data
+
+
+# Backward-compatible public names used by v_beta/updatedQC/master/Hotfix
+# and by auto_dataset_create.py. Keeping these aliases avoids breaking callers
+# while retaining the modern CheckQuality/CheckQualityControl class names.
+check_quality = CheckQuality
+check_quality_control = CheckQualityControl
 
 
 if __name__ == '__main__':
@@ -948,8 +991,8 @@ if __name__ == '__main__':
             # data_dict = {'RAW': [RAW_Comp_data, plot_raw=True, plot_norm=False, plot_R=False, plot_k=False],
         data_dict = {'RAW': [RAW_Comp_data, True, False, False, False,'Raw muE'],
                       "NORMALIZED": [NORM_Comp_data, True, True, False, False,'Norm muE'],
-                      'k': [K2_Comp_data, True, False, False, True,'k2 chik'],
-                      'R': [CHIR_Comp_data, True, False, True, False,'ChiR new'],
+                      'k': [K2_Comp_data, True, False, True, True,'k2 chik'],
+                      'R': [CHIR_Comp_data, True, False, True, True,'ChiR new'],
                       }
         qc = CheckQualityControl(facility_type='SYNCHROTRON', 
                                       files=[file_data],
@@ -976,12 +1019,3 @@ if __name__ == '__main__':
                                     key, 
                                     save_path=save_path)
         print("evaluation successful")
-
-
-# -----------------------------------------------------------------------------
-# Real refXAS compatibility bridge
-# StateJun/developer code imports historical lowercase names.
-# V5 introduced class names. Keep both APIs valid during the merge.
-# -----------------------------------------------------------------------------
-check_quality = CheckQuality
-check_quality_control = CheckQualityControl

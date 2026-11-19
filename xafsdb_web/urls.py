@@ -34,10 +34,7 @@ schema_view = get_schema_view(
 
 from plugins.column_views import apply_columns_view, scan_columns_view
 
-from . import curator_datasets
-
 urlpatterns = [
-    path("curator/reviewed", curator_datasets.reviewed_datasets, name="reviewed_datasets"),
     path("", views.home, name="home"),
     path("dataset/list", views.dataset_list, name="dataset_list"),
     path(

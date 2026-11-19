@@ -81,6 +81,7 @@ class AutoBlCreation(object):
             )
             api_response = api_instance.auth_controller_login(credentials_dto)
             self.access_token = api_response["access_token"]
+            print("ME ACCESS TOKEN:", self.access_token)
             return self.access_token
 
     def generate_random_string(self):

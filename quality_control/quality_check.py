@@ -365,8 +365,13 @@ class CheckQuality(object):
         elif take_first:
             e0_idx = int(local_maxima[0])
         else:
-            # Preserve larch202530's later-local-maximum behavior when candidates exist.
-            e0_idx = int(np.max(local_maxima))
+            # Use the strongest interior peak. A late scan artifact can have
+            # a higher index than the absorption edge.
+            interior_maxima = local_maxima[(local_maxima >= nmin) & (local_maxima < len(dmu) - nmin)]
+            if interior_maxima.size:
+                e0_idx = int(interior_maxima[np.argmax(dmu[interior_maxima])])
+            else:
+                e0_idx = int(np.argmax(dmu[nmin:-nmin])) + nmin
         e0 = energy[e0_idx]
         if group:
             group.e0 = e0

@@ -133,3 +133,21 @@ The isolated Docker build selected Yb L2 at 9978 eV for Cu2O_Cu_K_0000.xdi using
 ## Scope for the current review
 
 Dataset deletion is deferred. The QC change excludes curator deletion and curator access changes. A separate local safeguard draft makes the reviewed-datasets page read-only and applies a shared curator-group check to list, details, approval, and reviewed-datasets routes. That draft is pending runtime verification and is outside this review and any deployment.
+
+## Edge-selection fix and Docker rerun — 21 November 2026
+
+The column-correction path previously selected the last qualifying derivative peak.
+For the Cu2O control that was 9977.02 eV and led to the incorrect Yb L2
+assignment. The corrected path selects the strongest qualifying interior peak.
+The existing first-peak mode continues to use its original selection rule.
+
+| Control | Expected / actual | Edge (eV) | Edge step | Legacy interval (eV) | k max | Noise | Plots |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Cu2O Cu K | PASS / PASS | Cu K (8979) | 0.63014 | 0.42667 | 16.25 | 0.00078881 | 4 |
+| P65 Au foil | PASS / PASS | Au L3 (11919) | 1.80089 | 0.64620 | 15.35 | 0.00036184 | 4 |
+| SLRI Cu foil | REVIEW / REVIEW | Cu K (8979) | 1.80945 | 9.93000 (fail) | 15.00 | 0.00234305 | 4 |
+
+All three results matched their expected edge and status, and runtime
+reported no QC errors. The Cu2O peak was 8968.34 eV before calibration.
+The local evidence includes results.json and four PNGs per control.
+Matplotlib warned about Arial availability and still generated all plots.

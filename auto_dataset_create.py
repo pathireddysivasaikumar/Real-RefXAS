@@ -35,18 +35,16 @@ import json
 import logging
 import os
 from datetime import datetime
-from sys import path
 from typing import Any, Dict, NoReturn, Optional
 
 import environ
-import numpy as np
 import pyshorteners
 import requests
 from django.core.mail import send_mail
 
 import scicat_py
-from plugins.read_data import read_data
-from quality_control.quality_check import check_quality
+from plugins.column_correction import selection_from_form
+from plugins.frank_preview import IMPORTED_PLOT, QC_PLOTS, analyze_qc, render_qc_plots
 from webserver.settings import EMAIL_HOST_USER
 
 env = environ.Env()
@@ -79,27 +77,27 @@ class AutoDatasetCreation(object):
             # ubuntu
             #host = "http://172.27.20.173",
         )
-        self.qc_path = "quality_control/"
-        path.append(self.qc_path)
+        selection = selection_from_form(verify_data)
+        qc, imported, self.qc_report = analyze_qc(
+            s3_data_path,
+            source=verify_data.get("Source", "SYNCHROTRON"),
+            column_selection=selection,
+            element=verify_data.get("Element") if selection else None,
+            edge=verify_data.get("Edge") if selection else None,
+        )
+        plots = render_qc_plots(qc, imported, image_format="jpeg")
+        self.spectrum = qc.data
+
         self.auth_login()
         self.create_testdata()
         self.post_sthree()
         self.short_url()
-        self.qc_and_update()
-        self.upload_figure_data(
-            figure=self.data_dict["scientific_metadata"]["Figures"]["raw_data"],
-            caption="Raw data",
-        )
-        self.upload_figure_data(
-            figure=self.data_dict["scientific_metadata"]["Figures"]["normalized_data"],
-            caption="Normalized data",
-        )
-        self.upload_figure_data(
-            figure=self.data_dict["scientific_metadata"]["Figures"]["k"], caption="k"
-        )
-        self.upload_figure_data(
-            figure=self.data_dict["scientific_metadata"]["Figures"]["R"], caption="R"
-        )
+        self.update_dataset_link()
+
+        # Existing detail pages use the first four attachments by position.
+        for caption in [*(caption for _, caption in QC_PLOTS), IMPORTED_PLOT]:
+            self.upload_figure_data(figure=plots[caption], caption=caption)
+        self.notify_curator()
 
     def auth_login(self) -> Optional[str]:
         """
@@ -235,6 +233,13 @@ class AutoDatasetCreation(object):
             "keywords": "None",
         }
 
+        metadata = self.data_dict["scientific_metadata"]
+        metadata["QC"] = self.qc_report
+        for key, check in self.qc_report["checks"].items():
+            metadata["RAW"][key]["value"] = check["value"]
+        metadata["RAW"]["edge_energy"]["value"] = self.qc_report["energy_calibration"]["reference_e0_eV"]
+        metadata["RAW"]["noise"]["value"] = self.qc_report["noise"]
+
         with scicat_py.ApiClient(self.configuration) as api_client:
             api_client.configuration.access_token = self.access_token
             api_instance = scicat_py.DatasetsApi(api_client)
@@ -299,186 +304,29 @@ class AutoDatasetCreation(object):
 
         return self.short_url
 
-    def qc_and_update(self) -> NoReturn:
-        """
-        Performs quality control checks on newly uploaded dataset measurements, updates
-        the dataset's scientific metadata with quality control results, and communicates
-        these updates to the SciCat database. Additionally, it generates and stores plots
-        for the dataset and notifies the curator about the new dataset via email.
-
-        Attributes:
-            configuration: Configuration settings for the SciCat API client.
-            access_token: Auth token used for API requests.
-            qc_path: Path to the directory containing the quality control criteria JSON.
-            verify_data: Dictionary containing data verification details used in quality checks.
-            s3_data_path: Path where the dataset's files are stored, used for processing.
-            data_dict: Dictionary where processed data and metadata are stored and updated.
-
-        Uses:
-            This method processes the dataset using predefined quality criteria stored in a
-            JSON file, updates the dataset's metadata based on the analysis results, and uploads
-            the updated information along with generated plots to the SciCat database. If all
-            quality checks are passed, it sends an email to notify the curator and updates the
-            dataset entry in the database with quality metrics and plot data.
-
-        Raises:
-            Various exceptions related to file handling, data processing, or API communication
-            failures could be raised implicitly within the method.
-
-        Side effects:
-            - Modifies `self.data_dict` with new scientific metadata.
-            - Generates plot images and encodes them in base64 for storage.
-            - Sends an email to the curator.
-            - Updates the dataset in the SciCat database with new information.
-        """
+    def update_dataset_link(self) -> None:
+        """Keep the raw-file link and keywords used by existing dataset pages."""
+        raw = self.data_dict["scientific_metadata"]["RAW"]
+        keywords = [raw[key]["value"] for key in
+                    ("edge_step", "k_max", "energy_resolution", "edge_energy")]
+        keywords.extend(json.dumps(array.tolist(), allow_nan=False)
+                        for array in (self.spectrum.energy, self.spectrum.mu, self.spectrum.flat))
+        update = scicat_py.UpdateDatasetDto(source_folder=self.short_url, keywords=keywords)
         with scicat_py.ApiClient(self.configuration) as api_client:
             api_client.configuration.access_token = self.access_token
-            api_instance = scicat_py.DatasetsApi(api_client)
-
-            ### CHECK QUALITY CONTROL ###
-            ### loading the json criteria file for reference
-            cq_json = self.qc_path + "Criteria.json"
-            ### initialize quality check object
-            from plugins.column_correction import selection_from_form
-
-            column_selection = selection_from_form(self.verify_data)
-            edge_options = {}
-            if column_selection:
-                edge_options = {
-                    "element": self.verify_data.get("Element") or None,
-                    "edge": self.verify_data.get("Edge") or None,
-                }
-            cq = check_quality(quality_criteria_json=cq_json, **edge_options)
-            qc_list = []  ### this list will contain the quality criteria
-            ### here the measurement data has to be forwarded, where will the data be stored in SciCat?
-            # meas_data = np.loadtxt(self.short_url, skiprows=1)
-            if column_selection:
-                rd = read_data(
-                    source=self.data_dict["scientific_metadata"]["Data"]["Source"],
-                    column_selection=column_selection,
-                )
-            else:
-                rd = read_data(update_erange=self.verify_data)
-            rd.process_data(self.s3_data_path)
-            # print("Meas_data from qc_and_update:", meas_data)
-            cq.load_data(
-                rd.data,
-                source=self.data_dict["scientific_metadata"]["Data"]["Source"],
-                name=self.data_dict["dataset_name"],
+            scicat_py.DatasetsApi(api_client).datasets_controller_find_by_id_and_update(
+                self.datasetId, update, async_req=False, _preload_content=False,
             )
-            ### perform preprocessing on the data
-            data = (
-                cq.preprocess_data(take_first=not bool(column_selection))
-            )  #: data is a larch group with calibrated_energy = data.energy and absorption data.mu
-            # TODO: print(data) and send to download (here mu and energy)
-            ### plot the data and return the figure object
-            # TODO: cache k and R - in der cq.data.R/k
-            fig_raw_data = cq.plot_data(data_type="RAW")
-            fig_normalized_data = cq.plot_data(data_type="NORMALIZED")
-            fig_k = cq.plot_data(
-                data_type="k"
-            )  ### plot data in k and return the figure object
-            fig_R = cq.plot_data(
-                data_type="R"
-            )  ### plot data in R and return the figure object
-            self.data_dict["scientific_metadata"]["Figures"][
-                "raw_data"
-            ] = cq.encode_base64_figure(fig_raw_data)
-            self.data_dict["scientific_metadata"]["Figures"][
-                "normalized_data"
-            ] = cq.encode_base64_figure(fig_normalized_data)
-            self.data_dict["scientific_metadata"]["Figures"][
-                "k"
-            ] = cq.encode_base64_figure(fig_k)
-            self.data_dict["scientific_metadata"]["Figures"][
-                "R"
-            ] = cq.encode_base64_figure(fig_R)
-            ### check for the edge step
-            qc_list.append(cq.check_edge_step())
-            ### add to data_dict
-            self.data_dict["scientific_metadata"]["RAW"]["edge_energy"][
-                "value"
-            ] = np.round(data.e0, decimals=1)
-            ### add to data_dict
-            self.data_dict["scientific_metadata"]["RAW"]["edge_step"][
-                "value"
-            ] = np.round(qc_list[0][1], decimals=3)
-            ### check for the energy resolution
-            qc_list.append(cq.check_energy_resolution())
-            ### add to data_dict
-            self.data_dict["scientific_metadata"]["RAW"]["energy_resolution"][
-                "value"
-            ] = np.round(qc_list[1][1], decimals=1)
-            ### check for k
-            qc_list.append(cq.check_k())
-            ### add to data_dict
-            self.data_dict["scientific_metadata"]["RAW"]["k_max"]["value"] = np.round(
-                qc_list[2][1], decimals=1
-            )
-            ### Hand over quality criteria to webserver
-            self.edge_step = self.data_dict["scientific_metadata"]["RAW"]["edge_step"][
-                "value"
-            ]
-            self.energy_res = self.data_dict["scientific_metadata"]["RAW"][
-                "energy_resolution"
-            ]["value"]
-            self.k_max = self.data_dict["scientific_metadata"]["RAW"]["k_max"]["value"]
-            # self.noise = self.data_dict["scientific_metadata"]["RAW"]["noise"]["value"]
-            self.edge_energy = self.data_dict["scientific_metadata"]["RAW"][
-                "edge_energy"
-            ]["value"]
-            ## Store data:
-            self.data_dict["scientific_metadata"]["Data"]["Energy"] = data.energy
-            self.data_energy = self.data_dict["scientific_metadata"]["Data"]["Energy"]
-            self.data_dict["scientific_metadata"]["Data"]["Mu"] = data.mu
-            self.data_mu = self.data_dict["scientific_metadata"]["Data"]["Mu"]
-            self.data_dict["scientific_metadata"]["Data"]["Flat"] = data.flat
-            self.data_flat = self.data_dict["scientific_metadata"]["Data"]["Flat"]
-            # Convert lists to JSON strings for storage
-            energy_json = json.dumps(self.data_energy.tolist())
-            mu_json = json.dumps(self.data_mu.tolist())
-            flat_json = json.dumps(self.data_flat.tolist())
 
-            if all(qc_list):
-                print("DO SERVER COMMUNICATION -> CREATE DATASET")
-                print("SENDING MESSAGE TO CURATOR...")
-                send_mail(
-                    "RefXAS: NEW DATASET CREATED",
-                    "HEY MATE! \n\nSOMETHING EXCITING HAS HAPPENED: A NEW DATASET HAS BEEN CREATED! \nGO AND CURATE IT ASAP! \n\nSTAY HANDSOME :D"
-                    + "\n\nPayload-preview:"
-                    + "\n\nDATASET NAME:"
-                    + str(self.data_set_name)
-                    + "\n\nOWNER:"
-                    + str(self.resp["owner"]),
-                    EMAIL_HOST_USER,
-                    [EMAIL_HOST_USER, "abhijeet.gaur@kit.edu"],
-                    fail_silently=True,
-                )
-                update_dataset_dto = scicat_py.UpdateDatasetDto(
-                    source_folder=self.short_url,
-                    keywords=[
-                        self.edge_step,
-                        self.k_max,
-                        self.energy_res,
-                        self.edge_energy,
-                        energy_json,
-                        mu_json,
-                        flat_json,
-                    ],
-                )  # UpdateDatasetDto |
-                api_response = (
-                    api_instance.datasets_controller_find_by_id_replace_or_create(
-                        self.datasetId,
-                        update_dataset_dto,
-                        async_req=False,
-                        _preload_content=False,
-                    )
-                )
-                response = json.loads(api_response.data)
-                self.data_dict["scientific_metadata"]["Figures"]["raw_data"]
-                self.data_dict["scientific_metadata"]["Figures"]["normalized_data"]
-                self.data_dict["scientific_metadata"]["Figures"]["k"]
-                self.data_dict["scientific_metadata"]["Figures"]["R"]
+    def notify_curator(self) -> None:
+        send_mail(
+            "RefXAS: NEW DATASET CREATED",
+            "A new dataset is ready for curation.\n\n"
+            f"Dataset: {self.data_set_name}\nOwner: {self.resp['owner']}",
+            EMAIL_HOST_USER,
+            [EMAIL_HOST_USER, "abhijeet.gaur@kit.edu"],
+            fail_silently=True,
+        )
 
     def upload_figure_data(self, figure: str, caption: Optional[str] = "") -> None:
         """

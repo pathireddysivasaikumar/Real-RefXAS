@@ -69,16 +69,19 @@ def calculate_spectrum(raw_data, labels, selection, declared_energy_unit=None):
         energy *= 1000
     order = np.argsort(energy, kind='stable')
     energy, mu, reference = energy[order], mu[order], reference[order]
-    # Larch splines require strictly increasing energy. Keep the first reading
-    # at an exactly duplicated energy; record how many were omitted.
-    unique = np.r_[True, np.diff(energy) > 0]
-    duplicates = int(len(energy) - unique.sum())
-    energy, mu, reference = energy[unique], mu[unique], reference[unique]
+    # Average both signals over the same group of exactly repeated energies.
+    starts = np.flatnonzero(np.r_[True, np.diff(energy) > 0])
+    duplicates = len(energy) - len(starts)
+    if duplicates:
+        counts = np.diff(np.r_[starts, len(energy)])
+        energy = energy[starts]
+        mu = np.add.reduceat(mu, starts) / counts
+        reference = np.add.reduceat(reference, starts) / counts
     if len(energy) < 10 or energy[-1] <= energy[0]:
         raise ValueError('Select an energy column with at least 10 distinct energies')
     metadata = dict(energy=energy_label, signal_a=a_label, signal_b=b_label,
                     formula=formula, dropped_nonfinite=dropped,
-                    dropped_duplicate_energy=duplicates, converted_keV_to_eV=converted,
+                    energy_order="sort_average", averaged_duplicate_rows=duplicates, converted_keV_to_eV=converted,
                     input_energy_unit=effective_unit or ('keV' if converted else 'eV'),
                     energy_unit_source='selection' if requested_unit!='auto' else 'file header' if declared_energy_unit else 'value convention',
                     reference=reference_meta)

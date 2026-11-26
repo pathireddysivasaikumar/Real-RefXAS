@@ -44,12 +44,12 @@ urlpatterns = [
     ),
     path("curator/list", views.dataset_list_curator, name="dataset_list_curator"),
     path(
-        "curator/details/<str:dataset_id>",
+        "curator/details/<path:dataset_id>",
         views.dataset_details_curator,
         name="dataset_details_curator",
     ),
     path(
-        "curator/approve/<str:dataset_id>/",
+        "curator/approve/<path:dataset_id>/",
         views.approval_by_curator,
         name="approval_by_curator",
     ),

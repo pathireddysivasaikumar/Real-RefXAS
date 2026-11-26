@@ -12,6 +12,43 @@
                 justify-content: center;
                 align-items: center;
             }
+            .curator-qc {
+                margin: 1rem 0 2rem;
+            }
+            .curator-qc-table {
+                width: 100%;
+                margin: 1rem 0;
+                border-collapse: collapse;
+            }
+            .curator-qc-table caption {
+                text-align: left;
+                font-weight: 600;
+            }
+            .curator-qc-table th,
+            .curator-qc-table td {
+                padding: .45rem;
+                border-bottom: 1px solid #d6dee7;
+                text-align: left;
+                overflow-wrap: anywhere;
+            }
+            .curator-qc-plots {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: .75rem;
+            }
+            .curator-qc-plots figure {
+                margin: 0;
+                padding: .5rem;
+                border: 1px solid #d6dee7;
+            }
+            .curator-qc-plots img {
+                display: block;
+                width: 100%;
+                height: auto;
+            }
+            @media (max-width: 680px) {
+                .curator-qc-plots { grid-template-columns: 1fr; }
+            }
             .logo_curator {
                 font-size: 30px;
                 color: #0000FF;
@@ -104,6 +141,9 @@
     <div class="content-container">
 
         <body>
+            {% if frank_qc %}
+                {% include "landing/frank_curator_report.html" %}
+            {% else %}
             <div>
                 <div class="mySlides">
                   <br>
@@ -132,6 +172,7 @@
             </div>
 
 
+            {% endif %}
             <!-- Interactive Plotly Plot -->
             <div class="plot-container">
                 <h3>Interactive Plot</h3>
@@ -385,6 +426,7 @@
                     <tr> <th>MODE: {{ dataset_meta.scientificMetadata.Data.Mode }}</th></tr>
                     <tr> <th>RAW:</th></tr>
                 </thead>
+                {% if not frank_qc %}
                 <tbody>
                     <tr>
                         <th>EDGE STEP:</th>
@@ -436,6 +478,7 @@
                         UNIT: eV
                     </td></tr>
                 </tbody>
+                {% endif %}
             </table>
 
             <table id="datatablesSimple">
@@ -449,7 +492,7 @@
                 <tbody>
                     <tr>
                         <td><a class="download_curator" href="?download_zip=true">Download this work (ZIP)</a></td>
-                        <td>Description, metadata (json, yaml, hdf5), data and 4 plots.</td>
+                        <td>Description, metadata (json, yaml, hdf5), data and saved QC plots.</td>
                     </tr>
                 </tbody>
             </table>
@@ -565,7 +608,9 @@
     </div>
 </div>
 <script src="{% static 'js/app.js' %}" type="text/javascript"></script>
+{% if not frank_qc %}
 <script src="{% static 'js/content_imgslider.js' %}" type="text/javascript"></script>
+{% endif %}
 <!-- Script to toggle visibility -->
 <script>
     function showInputField() {

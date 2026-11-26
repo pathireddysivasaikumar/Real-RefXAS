@@ -317,22 +317,14 @@ def verify_upload(request) -> HttpResponse:
     # verify_data = request.POST
     # print("verify_data:", verify_data)
     from django.http import HttpResponseBadRequest
-    from plugins.column_correction import pending_upload_path
+    from plugins.column_correction import pending_upload_path, validate_applied_qc
 
     update_erange = request.POST
     try:
         measurement_path = pending_upload_path(request, update_erange.get("dataset_name", ""))
+        update_erange = validate_applied_qc(update_erange, path=measurement_path)
     except ValueError as exc:
-        return HttpResponseBadRequest(str(exc))
-    if update_erange.get("Use Column Selection") == "yes":
-        from plugins.column_correction import validate_applied_qc
-
-        try:
-            update_erange = validate_applied_qc(update_erange, path=measurement_path)
-        except ValueError as exc:
-            return HttpResponseBadRequest(
-                "Please review the selected spectrum: " + str(exc)
-            )
+        return HttpResponseBadRequest("Please review the selected spectrum: " + str(exc))
     # print("update_erange:", update_erange)
     file_path = update_erange.get("dataset_name")
     # print("FILE_path from verify_upload:", str(file_path))
@@ -909,6 +901,8 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
         in the database. Proper error handling must be in place to manage cases where the dataset
         ID might be incorrect or the dataset does not exist.
     """
+    from plugins.frank_preview import IMPORTED_PLOT, QC_PLOTS, QC_PLOT_LABELS
+
     with scicat_py.ApiClient(configuration=CONFIGURATION) as api_client:
         access_token = get_access()
         api_client.configuration.access_token = access_token
@@ -920,14 +914,26 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
             api_instance_dataset.datasets_controller_find_all_attachments(dataset_id)
         )
 
-        try:
-            raw_data_fig = attachment_response[0].thumbnail
-            normalized_data_fig = attachment_response[1].thumbnail
-            k_fig = attachment_response[2].thumbnail
-            R_fig = attachment_response[3].thumbnail
-        # TODO:
-        except IndexError:
-            return redirect("error")
+        frank_qc = (dataset_meta.get("scientificMetadata") or {}).get("QC")
+        frank_plots = []
+        imported_signals_fig = None
+        if frank_qc:
+            thumbnails = {attachment.caption: attachment.thumbnail for attachment in attachment_response}
+            captions = [caption for _, caption in QC_PLOTS]
+            raw_data_fig, normalized_data_fig, k_fig, R_fig = (
+                thumbnails.get(caption) for caption in captions
+            )
+            imported_signals_fig = thumbnails.get(IMPORTED_PLOT)
+            frank_plots = [
+                {"label": QC_PLOT_LABELS.get(caption, caption), "url": thumbnails.get(caption)}
+                for caption in (IMPORTED_PLOT, *captions)
+            ]
+        else:
+            if len(attachment_response) < 4:
+                return redirect("error")
+            raw_data_fig, normalized_data_fig, k_fig, R_fig = (
+                attachment.thumbnail for attachment in attachment_response[:4]
+            )
 
         if request.GET.get("download_zip"):
             zip_buffer = BytesIO()
@@ -1030,7 +1036,7 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
                 zip_file.writestr(f"{dataset_id}_metaData.txt", content_str)
 
                 # List of your base64 encoded image strings with the prefix
-                encoded_images = [raw_data_fig, normalized_data_fig, k_fig, R_fig]
+                encoded_images = [raw_data_fig, normalized_data_fig, k_fig, R_fig, imported_signals_fig]
 
                 for index, encoded_img in enumerate(encoded_images):
                     if encoded_img:
@@ -1046,7 +1052,7 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
                 content_text = (
                     "*Content description:*\n"
                     "\n"
-                    "This zipfile contains 10 files (including this one):\n"
+                    "This ZIP includes the following files when available:\n"
                     "\n"
                     "*1. README_FIRST*\n"
                     "\n"
@@ -1075,10 +1081,11 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
                     "*9. plot3.jpg*\n"
                     "JPEG image of Chi(k)\n"
                     "\n"
-                    "*9. plot4.jpg*\n"
+                    "*10. plot4.jpg*\n"
                     "JPEG image of Chi(R)\n"
                     "\n"
-                    "NOTE: The size of all image windows can be changed!"
+                    "*11. plot5.jpg*\n"
+                    "JPEG image of the imported signals before calibration, when recorded.\n"
                 )
                 zip_file.writestr("README_FIRST.txt", content_text)
 
@@ -1108,6 +1115,9 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
         "landing/base_curator.html",
         {
             "dataset_meta": dataset_meta,
+            "frank_qc": frank_qc,
+            "frank_plots": frank_plots,
+            "imported_signals_fig": imported_signals_fig,
             "raw_data_fig": raw_data_fig,
             "normalized_data_fig": normalized_data_fig,
             "k_fig": k_fig,

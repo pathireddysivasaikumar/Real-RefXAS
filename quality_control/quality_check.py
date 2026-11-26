@@ -232,7 +232,8 @@ class CheckQuality(object):
             self.data.e0, self.requested_element, self.requested_edge
         )
         print(f"detected edge: {element_n_edge} at energy: {edge_E_DB}")
-        self.data.E_difference = self.data.e0 - edge_E_DB
+        uncalibrated_reference = self.data.e0
+        self.data.E_difference = uncalibrated_reference - edge_E_DB
         print(f"detected spectrometer energy shift: {self.data.E_difference}")
         self.data.energy -= (self.data.e0 - edge_E_DB)
         # find the edge energy after the shift again for both reference and
@@ -252,6 +253,15 @@ class CheckQuality(object):
         # calculate the edge shift
         self.edge_shift = self.e0_sample - self.e0_ref
         print(f"detected edge shift of {self.edge_shift} eV")
+        self.energy_calibration = {
+            "detected_edge": f"{element_n_edge[0]} {element_n_edge[1]} at {edge_E_DB:.3f} eV",
+            "uncalibrated_sample_eV": float(e0_test),
+            "uncalibrated_reference_eV": float(uncalibrated_reference),
+            "spectrometer_shift_eV": float(self.data.E_difference),
+            "reference_e0_eV": float(self.e0_ref),
+            "sample_e0_eV": float(self.e0_sample),
+            "edge_shift_eV": float(self.edge_shift),
+        }
         # retrieve the array index of E0 to determine low cut energy
 
         edge_index = np.argmin(np.abs(self.data.energy-self.data.e0))

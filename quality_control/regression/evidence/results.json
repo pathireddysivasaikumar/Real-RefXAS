@@ -1,0 +1,307 @@
+{
+  "verification_date": "2026-11-26",
+  "destination_branch_base": "ede747d73ee563a8d06f93f579bb0f8ce4fe8e9b",
+  "browser_and_isolated_real_scicat": {
+    "xraylarch_version": "2026.3.1",
+    "legacy_four_plot_curator_view": "PASS",
+    "measurements": [
+      {
+        "file": "Cu2O_Cu_K_0000 (1).xdi",
+        "qc_version": "Frank v5.6",
+        "input_sha256": "5b6c724243c312323be98eeed63fd3491585285922c1c06944355eecb9d71d60",
+        "status": "PASS",
+        "checks": {
+          "edge_step": {
+            "passed": true,
+            "value": 0.6293884418738555
+          },
+          "energy_resolution": {
+            "passed": true,
+            "value": 0.40500155841436936
+          },
+          "k_max": {
+            "passed": true,
+            "value": 16.25
+          }
+        },
+        "beamline": "Manual column selection",
+        "noise": 0.0006812625386289817,
+        "kmin": 2.6500000000000004,
+        "kmax": 12.450000000000001,
+        "n_pts": 2360,
+        "raw_in_meta": false,
+        "energy_sampling": {
+          "unit": "eV",
+          "first_interval": 0.001570330401591491,
+          "minimum_positive_interval": 0.00026172179241257254,
+          "median_positive_interval": 0.455156572168562,
+          "maximum_positive_interval": 0.5613171090844844,
+          "near_edge_window_eV": 10,
+          "near_edge_median_interval": 0.41062650432741066,
+          "near_edge_interval_count": 48,
+          "instrumental_energy_resolution": "not assessed from scan spacing"
+        },
+        "energy_calibration": {
+          "detected_edge": "Cu K at 8979.000 eV",
+          "uncalibrated_sample_eV": 8968.339771893385,
+          "uncalibrated_reference_eV": 8967.13084093351,
+          "spectrometer_shift_eV": -11.869159066489374,
+          "reference_e0_eV": 8979.0,
+          "sample_e0_eV": 8980.208930959874,
+          "edge_shift_eV": 1.2089309598741238
+        },
+        "column_selection": {
+          "energy": "energy_enc",
+          "signal_a": "i0",
+          "signal_b": "i1",
+          "formula": "log_ratio",
+          "dropped_nonfinite": 0,
+          "energy_order": "sort_average",
+          "averaged_duplicate_rows": 1,
+          "converted_keV_to_eV": false,
+          "input_energy_unit": "eV",
+          "energy_unit_source": "selection",
+          "reference": {
+            "enabled": true,
+            "signal_a": "i1",
+            "signal_b": "i2",
+            "formula": "log_ratio"
+          },
+          "scan_index": 0,
+          "scan_label": "Table 1"
+        },
+        "spectrometer_shift_eV": -11.869159066489374,
+        "edge_shift_eV": 1.2089309598741238,
+        "plot_count": 5,
+        "readback": {
+          "raw_upload_byte_match": true,
+          "preview_equals_saved_scicat_qc": true,
+          "curator_and_zip_include_five_plots": true
+        }
+      },
+      {
+        "file": "Cu2O Cu K Elettra.txt",
+        "qc_version": "Frank v5.6",
+        "input_sha256": "02b5eada664b1693144ad5592b7d90660f04a56062da8bc2b41a376d3071c9e9",
+        "status": "REVIEW",
+        "checks": {
+          "edge_step": {
+            "passed": true,
+            "value": 0.858121946210533
+          },
+          "energy_resolution": {
+            "passed": false,
+            "value": 4.99688900000001
+          },
+          "k_max": {
+            "passed": false,
+            "value": 14.0
+          }
+        },
+        "beamline": "Manual column selection",
+        "noise": 0.0006890927593882919,
+        "kmin": 2.6500000000000004,
+        "kmax": 11.55,
+        "n_pts": 720,
+        "raw_in_meta": false,
+        "energy_sampling": {
+          "unit": "eV",
+          "first_interval": 4.99688900000001,
+          "minimum_positive_interval": 0.19203099999867845,
+          "median_positive_interval": 0.8653819999999541,
+          "maximum_positive_interval": 5.023188999999547,
+          "near_edge_window_eV": 10,
+          "near_edge_median_interval": 0.19296900000063033,
+          "near_edge_interval_count": 100,
+          "instrumental_energy_resolution": "not assessed from scan spacing"
+        },
+        "energy_calibration": {
+          "detected_edge": "Cu K at 8979.000 eV",
+          "uncalibrated_sample_eV": 8980.661863,
+          "uncalibrated_reference_eV": 8979.273023,
+          "spectrometer_shift_eV": 0.2730229999997391,
+          "reference_e0_eV": 8979.0,
+          "sample_e0_eV": 8980.38884,
+          "edge_shift_eV": 1.3888399999996182
+        },
+        "column_selection": {
+          "energy": "column_1",
+          "signal_a": "column_3",
+          "signal_b": "column_4",
+          "formula": "log_ratio",
+          "dropped_nonfinite": 0,
+          "energy_order": "sort_average",
+          "averaged_duplicate_rows": 0,
+          "converted_keV_to_eV": false,
+          "input_energy_unit": "eV",
+          "energy_unit_source": "selection",
+          "reference": {
+            "enabled": true,
+            "signal_a": "column_7",
+            "signal_b": "column_8",
+            "formula": "log_ratio"
+          },
+          "scan_index": 0,
+          "scan_label": "Table 1"
+        },
+        "spectrometer_shift_eV": 0.2730229999997391,
+        "edge_shift_eV": 1.3888399999996182,
+        "plot_count": 5,
+        "readback": {
+          "raw_upload_byte_match": true,
+          "preview_equals_saved_scicat_qc": true,
+          "curator_and_zip_include_five_plots": true
+        }
+      }
+    ]
+  },
+  "offline_container_with_branch_pins": {
+    "xraylarch_version": "0.9.66",
+    "measurements": [
+      {
+        "file": "Cu2O_Cu_K_0000 (1).xdi",
+        "qc_version": "Frank v5.6",
+        "input_sha256": "5b6c724243c312323be98eeed63fd3491585285922c1c06944355eecb9d71d60",
+        "status": "PASS",
+        "checks": {
+          "edge_step": {
+            "passed": true,
+            "value": 0.6293884418738697
+          },
+          "energy_resolution": {
+            "passed": true,
+            "value": 0.40500155841436936
+          },
+          "k_max": {
+            "passed": true,
+            "value": 16.25
+          }
+        },
+        "beamline": "Manual column selection",
+        "noise": 0.0006821676027921437,
+        "kmin": 2.6500000000000004,
+        "kmax": 12.450000000000001,
+        "n_pts": 2360,
+        "raw_in_meta": false,
+        "energy_sampling": {
+          "unit": "eV",
+          "first_interval": 0.001570330401591491,
+          "minimum_positive_interval": 0.00026172179241257254,
+          "median_positive_interval": 0.455156572168562,
+          "maximum_positive_interval": 0.5613171090844844,
+          "near_edge_window_eV": 10,
+          "near_edge_median_interval": 0.41062650432741066,
+          "near_edge_interval_count": 48,
+          "instrumental_energy_resolution": "not assessed from scan spacing"
+        },
+        "energy_calibration": {
+          "detected_edge": "Cu K at 8979.000 eV",
+          "uncalibrated_sample_eV": 8968.339771893385,
+          "uncalibrated_reference_eV": 8967.13084093351,
+          "spectrometer_shift_eV": -11.869159066489374,
+          "reference_e0_eV": 8979.0,
+          "sample_e0_eV": 8980.208930959874,
+          "edge_shift_eV": 1.2089309598741238
+        },
+        "column_selection": {
+          "energy": "energy_enc",
+          "signal_a": "i0",
+          "signal_b": "i1",
+          "formula": "log_ratio",
+          "dropped_nonfinite": 0,
+          "energy_order": "sort_average",
+          "averaged_duplicate_rows": 1,
+          "converted_keV_to_eV": false,
+          "input_energy_unit": "eV",
+          "energy_unit_source": "selection",
+          "reference": {
+            "enabled": true,
+            "signal_a": "i1",
+            "signal_b": "i2",
+            "formula": "log_ratio"
+          },
+          "scan_index": 0,
+          "scan_label": "Table 1"
+        },
+        "plot_count": 5,
+        "spectrometer_shift_eV": -11.869159066489374,
+        "edge_shift_eV": 1.2089309598741238
+      },
+      {
+        "file": "Cu2O Cu K Elettra.txt",
+        "qc_version": "Frank v5.6",
+        "input_sha256": "02b5eada664b1693144ad5592b7d90660f04a56062da8bc2b41a376d3071c9e9",
+        "status": "REVIEW",
+        "checks": {
+          "edge_step": {
+            "passed": true,
+            "value": 0.8581219462105223
+          },
+          "energy_resolution": {
+            "passed": false,
+            "value": 4.99688900000001
+          },
+          "k_max": {
+            "passed": false,
+            "value": 14.0
+          }
+        },
+        "beamline": "Manual column selection",
+        "noise": 0.0006769070442764328,
+        "kmin": 2.6500000000000004,
+        "kmax": 11.55,
+        "n_pts": 720,
+        "raw_in_meta": false,
+        "energy_sampling": {
+          "unit": "eV",
+          "first_interval": 4.99688900000001,
+          "minimum_positive_interval": 0.19203099999867845,
+          "median_positive_interval": 0.8653819999999541,
+          "maximum_positive_interval": 5.023188999999547,
+          "near_edge_window_eV": 10,
+          "near_edge_median_interval": 0.19296900000063033,
+          "near_edge_interval_count": 100,
+          "instrumental_energy_resolution": "not assessed from scan spacing"
+        },
+        "energy_calibration": {
+          "detected_edge": "Cu K at 8979.000 eV",
+          "uncalibrated_sample_eV": 8980.661863,
+          "uncalibrated_reference_eV": 8979.273023,
+          "spectrometer_shift_eV": 0.2730229999997391,
+          "reference_e0_eV": 8979.0,
+          "sample_e0_eV": 8980.38884,
+          "edge_shift_eV": 1.3888399999996182
+        },
+        "column_selection": {
+          "energy": "column_1",
+          "signal_a": "column_3",
+          "signal_b": "column_4",
+          "formula": "log_ratio",
+          "dropped_nonfinite": 0,
+          "energy_order": "sort_average",
+          "averaged_duplicate_rows": 0,
+          "converted_keV_to_eV": false,
+          "input_energy_unit": "eV",
+          "energy_unit_source": "selection",
+          "reference": {
+            "enabled": true,
+            "signal_a": "column_7",
+            "signal_b": "column_8",
+            "formula": "log_ratio"
+          },
+          "scan_index": 0,
+          "scan_label": "Table 1"
+        },
+        "plot_count": 5,
+        "spectrometer_shift_eV": 0.2730229999997391,
+        "edge_shift_eV": 1.3888399999996182
+      }
+    ]
+  },
+  "pytest_in_both_runtimes": {
+    "command": "python -m pytest -q -rxX test/test_frank_qc.py",
+    "passed": 2,
+    "expected_failures": 1,
+    "expected_failure": "SLRI first-interval criterion versus near-edge sampling"
+  }
+}

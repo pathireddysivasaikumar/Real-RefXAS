@@ -1,0 +1,49 @@
+<section class="curator-qc" aria-labelledby="curator-qc-title">
+    <h2 id="curator-qc-title">Frank QC report</h2>
+    <p><strong>{{ frank_qc.status }}</strong>{% if frank_qc.qc_version %} · {{ frank_qc.qc_version }}{% endif %}</p>
+
+    {% with calibration=frank_qc.energy_calibration %}
+    <table class="curator-qc-table">
+        <caption>Energy &amp; calibration</caption>
+        <tbody>
+            <tr><th scope="row">Detected absorption edge</th><td>{{ calibration.detected_edge }}</td></tr>
+            <tr><th scope="row">Uncalibrated sample edge</th><td>{{ calibration.uncalibrated_sample_eV|floatformat:"6u" }} eV</td></tr>
+            <tr><th scope="row">Uncalibrated reference edge</th><td>{{ calibration.uncalibrated_reference_eV|floatformat:"6u" }} eV</td></tr>
+            <tr><th scope="row">Spectrometer energy shift</th><td>{{ calibration.spectrometer_shift_eV|floatformat:"6u" }} eV</td></tr>
+            <tr><th scope="row">Calibrated reference E₀</th><td>{{ calibration.reference_e0_eV|floatformat:"6u" }} eV</td></tr>
+            <tr><th scope="row">Calibrated sample E₀</th><td>{{ calibration.sample_e0_eV|floatformat:"6u" }} eV</td></tr>
+            <tr><th scope="row">Sample − reference edge shift</th><td>{{ calibration.edge_shift_eV|floatformat:"6u" }} eV</td></tr>
+        </tbody>
+    </table>
+    {% endwith %}
+
+    {% with checks=frank_qc.checks sampling=frank_qc.energy_sampling %}
+    <table class="curator-qc-table">
+        <caption>QC metrics</caption>
+        <thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">Check</th></tr></thead>
+        <tbody>
+            <tr><th scope="row">Edge step</th><td>{{ checks.edge_step.value|floatformat:"5u" }} a.u.</td><td>{{ checks.edge_step.passed|yesno:"PASS,REVIEW" }}</td></tr>
+            <tr><th scope="row">First interval after preprocessing</th><td>{{ checks.energy_resolution.value|floatformat:"6u" }} eV</td><td>{{ checks.energy_resolution.passed|yesno:"PASS,REVIEW" }}</td></tr>
+            <tr><th scope="row">Available k endpoint</th><td>{{ checks.k_max.value|floatformat:"2u" }} Å⁻¹</td><td>{{ checks.k_max.passed|yesno:"PASS,REVIEW" }}</td></tr>
+            <tr><th scope="row">Fourier window</th><td>{{ frank_qc.kmin|floatformat:"2u" }}–{{ frank_qc.kmax|floatformat:"2u" }} Å⁻¹</td><td></td></tr>
+            <tr><th scope="row">Estimated noise</th><td>{{ frank_qc.noise|floatformat:"5u" }} a.u.</td><td></td></tr>
+            <tr><th scope="row">Points after QC preprocessing</th><td>{{ frank_qc.n_pts }}</td><td></td></tr>
+            {% if sampling.near_edge_interval_count %}
+            <tr><th scope="row">Median near-edge interval</th><td>{{ sampling.near_edge_median_interval|floatformat:"6u" }} eV</td><td></td></tr>
+            {% endif %}
+            {% if frank_qc.input_sha256 %}
+            <tr><th scope="row">Source SHA-256</th><td colspan="2"><code>{{ frank_qc.input_sha256 }}</code></td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+    {% endwith %}
+
+    <div class="curator-qc-plots">
+        {% for plot in frank_plots %}
+        <figure>
+            {% if plot.url %}<img src="{{ plot.url }}" alt="{{ plot.label }}">{% endif %}
+            <figcaption>{{ plot.label }}{% if not plot.url %} · Unavailable{% endif %}</figcaption>
+        </figure>
+        {% endfor %}
+    </div>
+</section>

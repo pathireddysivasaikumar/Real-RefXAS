@@ -1,0 +1,355 @@
+{
+  "kit_baseline_commit": "53d03e8db7037b6497c04c5597a7436eecea7d27",
+  "esrf_link_fix_commit": "30fbf1a1d86084ca0e92c73a7a19b314c74ff0d8",
+  "pinned_runtime_comparison": {
+    "xraylarch": "0.9.66",
+    "baseline": {
+      "ROCK Mo foil": {
+        "file": "Mo_foil Mo K ROCK Soleil.txt",
+        "input_sha256": "58e6c38e24802fc9cc82d67ffdcc6cae2341696e29ad998b821480a790a7178b",
+        "beamline": "SOLEIL ROCK",
+        "source": "SYNCHROTRON",
+        "element": "Mo",
+        "edge": "K",
+        "status": "REVIEW",
+        "energy_min_eV": 19750.0,
+        "energy_max_eV": 21300.0,
+        "reference_e0_eV": 20000.0,
+        "sample_e0_eV": 20000.0,
+        "spectrometer_shift_eV": 0.0,
+        "sample_reference_shift_eV": 0.0,
+        "edge_step": 1.0180076102003426,
+        "first_qc_interval_eV": 3.0,
+        "available_k_endpoint": 18.45,
+        "kmin": 2.95,
+        "kmax": 12.55,
+        "noise": 0.0024597626649076115,
+        "points": 751,
+        "plot_count": 4
+      },
+      "ESRF H5": {
+        "file": "ESRF_052022_01_RT_EXAFS.h5",
+        "input_sha256": "c9e792ddf2ded16c224750a640f3c7db2bed9f05ee331a2d3081afc66a952ffb",
+        "beamline": null,
+        "source": "SYNCHROTRON",
+        "element": "Pt",
+        "edge": "L3",
+        "status": "REVIEW",
+        "energy_min_eV": 11351.964310783676,
+        "energy_max_eV": 12646.73079541314,
+        "reference_e0_eV": 11564.0,
+        "sample_e0_eV": 11564.929624153887,
+        "spectrometer_shift_eV": 0.48012690911673417,
+        "sample_reference_shift_eV": 0.9296241538868344,
+        "edge_step": 0.12105633230057766,
+        "first_qc_interval_eV": 0.45749187655928836,
+        "available_k_endpoint": 16.85,
+        "kmin": 3.1500000000000004,
+        "kmax": 12.0,
+        "noise": 0.0012189706591705085,
+        "points": 2319,
+        "plot_count": 4
+      }
+    },
+    "candidate": {
+      "ROCK Mo foil": {
+        "file": "Mo_foil Mo K ROCK Soleil.txt",
+        "input_sha256": "58e6c38e24802fc9cc82d67ffdcc6cae2341696e29ad998b821480a790a7178b",
+        "beamline": "SOLEIL ROCK",
+        "source": "SYNCHROTRON",
+        "element": "Mo",
+        "edge": "K",
+        "status": "REVIEW",
+        "energy_min_eV": 19750.0,
+        "energy_max_eV": 21300.0,
+        "reference_e0_eV": 20000.0,
+        "sample_e0_eV": 20000.0,
+        "spectrometer_shift_eV": 0.0,
+        "sample_reference_shift_eV": 0.0,
+        "edge_step": 1.0180076102003426,
+        "first_qc_interval_eV": 3.0,
+        "available_k_endpoint": 18.45,
+        "kmin": 2.95,
+        "kmax": 12.55,
+        "noise": 0.0024597626649076115,
+        "points": 751,
+        "plot_count": 5
+      },
+      "ESRF H5": {
+        "file": "ESRF_052022_01_RT_EXAFS.h5",
+        "input_sha256": "c9e792ddf2ded16c224750a640f3c7db2bed9f05ee331a2d3081afc66a952ffb",
+        "beamline": null,
+        "source": "SYNCHROTRON",
+        "element": "Pt",
+        "edge": "L3",
+        "status": "REVIEW",
+        "energy_min_eV": 11351.964310783676,
+        "energy_max_eV": 12646.73079541314,
+        "reference_e0_eV": 11564.0,
+        "sample_e0_eV": 11564.929624153887,
+        "spectrometer_shift_eV": 0.48012690911673417,
+        "sample_reference_shift_eV": 0.9296241538868344,
+        "edge_step": 0.12105633230057766,
+        "first_qc_interval_eV": 0.45749187655928836,
+        "available_k_endpoint": 16.85,
+        "kmin": 3.1500000000000004,
+        "kmax": 12.0,
+        "noise": 0.0012189706591705085,
+        "points": 2319,
+        "plot_count": 5
+      }
+    }
+  },
+  "isolated_real_scicat_browser_validation": {
+    "xraylarch": "2026.3.1",
+    "submissions": [
+      {
+        "file": "Cu2O_Cu_K_0000 (1).xdi",
+        "qc_version": "Frank v5.6",
+        "input_sha256": "5b6c724243c312323be98eeed63fd3491585285922c1c06944355eecb9d71d60",
+        "status": "PASS",
+        "checks": {
+          "edge_step": {
+            "passed": true,
+            "value": 0.6293884418738555
+          },
+          "energy_resolution": {
+            "passed": true,
+            "value": 0.40500155841436936
+          },
+          "k_max": {
+            "passed": true,
+            "value": 16.25
+          }
+        },
+        "beamline": "Manual column selection",
+        "noise": 0.0006812625386289817,
+        "kmin": 2.6500000000000004,
+        "kmax": 12.450000000000001,
+        "n_pts": 2360,
+        "raw_in_meta": false,
+        "energy_sampling": {
+          "unit": "eV",
+          "first_interval": 0.001570330401591491,
+          "minimum_positive_interval": 0.00026172179241257254,
+          "median_positive_interval": 0.455156572168562,
+          "maximum_positive_interval": 0.5613171090844844,
+          "near_edge_window_eV": 10,
+          "near_edge_median_interval": 0.41062650432741066,
+          "near_edge_interval_count": 48,
+          "instrumental_energy_resolution": "not assessed from scan spacing"
+        },
+        "energy_calibration": {
+          "detected_edge": "Cu K at 8979.000 eV",
+          "uncalibrated_sample_eV": 8968.339771893385,
+          "uncalibrated_reference_eV": 8967.13084093351,
+          "spectrometer_shift_eV": -11.869159066489374,
+          "reference_e0_eV": 8979.0,
+          "sample_e0_eV": 8980.208930959874,
+          "edge_shift_eV": 1.2089309598741238
+        },
+        "column_selection": {
+          "energy": "energy_enc",
+          "signal_a": "i0",
+          "signal_b": "i1",
+          "formula": "log_ratio",
+          "dropped_nonfinite": 0,
+          "energy_order": "sort_average",
+          "averaged_duplicate_rows": 1,
+          "converted_keV_to_eV": false,
+          "input_energy_unit": "eV",
+          "energy_unit_source": "selection",
+          "reference": {
+            "enabled": true,
+            "signal_a": "i1",
+            "signal_b": "i2",
+            "formula": "log_ratio"
+          },
+          "scan_index": 0,
+          "scan_label": "Table 1"
+        },
+        "spectrometer_shift_eV": -11.869159066489374,
+        "edge_shift_eV": 1.2089309598741238,
+        "selection_mode": "corrected",
+        "browser_checks": {
+          "raw_upload_byte_match": true,
+          "saved_scicat_report_equals_qc_result": true,
+          "curator_and_zip_include_five_plots": true
+        }
+      },
+      {
+        "file": "Cu2O_Cu_K_0000 (1).xdi",
+        "qc_version": "Frank v5.6",
+        "input_sha256": "5b6c724243c312323be98eeed63fd3491585285922c1c06944355eecb9d71d60",
+        "status": "PASS",
+        "checks": {
+          "edge_step": {
+            "passed": true,
+            "value": 0.7153977274055691
+          },
+          "energy_resolution": {
+            "passed": true,
+            "value": 0.41036208788864315
+          },
+          "k_max": {
+            "passed": true,
+            "value": 16.25
+          }
+        },
+        "beamline": "PETRA III Extension Beamline P65",
+        "noise": 0.000749343645518895,
+        "kmin": 2.6500000000000004,
+        "kmax": 12.450000000000001,
+        "n_pts": 2334,
+        "raw_in_meta": false,
+        "energy_sampling": {
+          "unit": "eV",
+          "first_interval": 0.050512603535025846,
+          "minimum_positive_interval": 0.050512603535025846,
+          "median_positive_interval": 0.45597270337111695,
+          "maximum_positive_interval": 0.5613171090844844,
+          "near_edge_window_eV": 10,
+          "near_edge_median_interval": 0.41062650432741066,
+          "near_edge_interval_count": 48,
+          "instrumental_energy_resolution": "not assessed from scan spacing"
+        },
+        "energy_calibration": {
+          "detected_edge": "Cu K at 8979.000 eV",
+          "uncalibrated_sample_eV": 8968.339771893385,
+          "uncalibrated_reference_eV": 8967.13084093351,
+          "spectrometer_shift_eV": -11.869159066489374,
+          "reference_e0_eV": 8979.0,
+          "sample_e0_eV": 8980.208930959874,
+          "edge_shift_eV": 1.2089309598741238
+        },
+        "column_selection": null,
+        "spectrometer_shift_eV": -11.869159066489374,
+        "edge_shift_eV": 1.2089309598741238,
+        "selection_mode": "automatic",
+        "browser_checks": {
+          "raw_upload_byte_match": true,
+          "saved_scicat_report_equals_qc_result": true,
+          "curator_and_zip_include_five_plots": true
+        }
+      },
+      {
+        "file": "Mo_foil Mo K ROCK Soleil.txt",
+        "qc_version": "Frank v5.6",
+        "input_sha256": "58e6c38e24802fc9cc82d67ffdcc6cae2341696e29ad998b821480a790a7178b",
+        "status": "REVIEW",
+        "checks": {
+          "edge_step": {
+            "passed": true,
+            "value": 1.0180076102003932
+          },
+          "energy_resolution": {
+            "passed": false,
+            "value": 3.0
+          },
+          "k_max": {
+            "passed": true,
+            "value": 18.45
+          }
+        },
+        "beamline": "SOLEIL ROCK",
+        "noise": 0.0024593781380960506,
+        "kmin": 3.0,
+        "kmax": 12.55,
+        "n_pts": 751,
+        "raw_in_meta": false,
+        "energy_sampling": {
+          "unit": "eV",
+          "first_interval": 3.0,
+          "minimum_positive_interval": 0.5,
+          "median_positive_interval": 3.0,
+          "maximum_positive_interval": 3.0,
+          "near_edge_window_eV": 10,
+          "near_edge_median_interval": 0.5,
+          "near_edge_interval_count": 40,
+          "instrumental_energy_resolution": "not assessed from scan spacing"
+        },
+        "energy_calibration": {
+          "detected_edge": "Mo K at 20000.000 eV",
+          "uncalibrated_sample_eV": 20000.0,
+          "uncalibrated_reference_eV": 20000.0,
+          "spectrometer_shift_eV": 0.0,
+          "reference_e0_eV": 20000.0,
+          "sample_e0_eV": 20000.0,
+          "edge_shift_eV": 0.0
+        },
+        "column_selection": null,
+        "spectrometer_shift_eV": 0.0,
+        "edge_shift_eV": 0.0,
+        "selection_mode": "automatic",
+        "browser_checks": {
+          "raw_upload_byte_match": true,
+          "saved_scicat_report_equals_qc_result": true,
+          "curator_and_zip_include_five_plots": true
+        }
+      },
+      {
+        "file": "ESRF_052022_01_RT_EXAFS.h5",
+        "qc_version": "Frank v5.6",
+        "input_sha256": "c9e792ddf2ded16c224750a640f3c7db2bed9f05ee331a2d3081afc66a952ffb",
+        "status": "REVIEW",
+        "checks": {
+          "edge_step": {
+            "passed": false,
+            "value": 0.12105633230055812
+          },
+          "energy_resolution": {
+            "passed": true,
+            "value": 0.45749187655928836
+          },
+          "k_max": {
+            "passed": true,
+            "value": 16.85
+          }
+        },
+        "beamline": null,
+        "noise": 0.0012194319989029799,
+        "kmin": 2.8000000000000003,
+        "kmax": 12.0,
+        "n_pts": 2319,
+        "raw_in_meta": false,
+        "energy_sampling": {
+          "unit": "eV",
+          "first_interval": 0.36368209239662974,
+          "minimum_positive_interval": 0.3359293209960015,
+          "median_positive_interval": 0.4984210091524801,
+          "maximum_positive_interval": 0.5918442848760606,
+          "near_edge_window_eV": 10,
+          "near_edge_median_interval": 0.46483103978607687,
+          "near_edge_interval_count": 43,
+          "instrumental_energy_resolution": "not assessed from scan spacing"
+        },
+        "energy_calibration": {
+          "detected_edge": "Pt L3 at 11564.000 eV",
+          "uncalibrated_sample_eV": 11565.409751063004,
+          "uncalibrated_reference_eV": 11564.480126909117,
+          "spectrometer_shift_eV": 0.48012690911673417,
+          "reference_e0_eV": 11564.0,
+          "sample_e0_eV": 11564.929624153887,
+          "edge_shift_eV": 0.9296241538868344
+        },
+        "column_selection": null,
+        "spectrometer_shift_eV": 0.48012690911673417,
+        "edge_shift_eV": 0.9296241538868344,
+        "selection_mode": "automatic",
+        "browser_checks": {
+          "raw_upload_byte_match": true,
+          "saved_scicat_report_equals_qc_result": true,
+          "curator_and_zip_include_five_plots": true,
+          "original_h5_in_zip_byte_match": true
+        }
+      }
+    ]
+  },
+  "pinned_runtime_pytest": {
+    "passed": 4,
+    "expected_failures": 1
+  },
+  "published_review_branch": "RefXAS_Review_Nov2026",
+  "published_review_previous_commit": "82475dea25020de08ed45fb20c2617ecd5b841b1",
+  "verified_kit_source_commit": "79a6dd98b8087f07a5f38d8a8339220fbc394e59"
+}

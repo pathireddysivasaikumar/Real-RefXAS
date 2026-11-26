@@ -42,3 +42,22 @@ def test_slri_report_distinguishes_scan_start_and_near_edge_sampling(slri_report
 )
 def test_slri_energy_spacing_check_should_accept_near_edge_sampling(slri_report):
     assert slri_report["checks"]["energy_resolution"]["passed"]
+
+
+@pytest.mark.parametrize(
+    ("file", "element", "edge", "reference_e0", "sample_e0", "points"),
+    [
+        ("Mo_foil Mo K ROCK Soleil.txt", "Mo", "K", 20000.0, 20000.0, 751),
+        ("not_yet_working/ESRF_052022_01_RT_EXAFS.h5", "Pt", "L3", 11564.0, 11564.929624, 2319),
+    ],
+)
+def test_automatic_qc_preserves_rock_and_esrf_baseline(
+    file, element, edge, reference_e0, sample_e0, points
+):
+    qc, _, report = analyze_qc(EXAMPLES / file)
+
+    assert qc.data.element_n_edge == (element, edge)
+    assert report["status"] == "REVIEW"
+    assert report["n_pts"] == points
+    assert report["energy_calibration"]["reference_e0_eV"] == pytest.approx(reference_e0, rel=0, abs=1e-6)
+    assert report["energy_calibration"]["sample_e0_eV"] == pytest.approx(sample_e0, rel=0, abs=1e-6)

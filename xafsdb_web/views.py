@@ -30,6 +30,8 @@ import zipfile
 from collections import defaultdict
 from io import BytesIO
 from itertools import zip_longest
+from pathlib import Path
+from shutil import copyfileobj
 from typing import Any, Dict, List, NoReturn, Type
 
 import h5py
@@ -1020,18 +1022,19 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
                     edge_energy = "N/A"
                 content_str += f"    - Edge energy: {edge_energy}\n"
 
-                # Filter Files objects by dataset_id
-                item_list = Files.objects.filter(dataset_id=dataset_id)
-                for item in item_list:
-                    # Ensure there is a file associated with the item
-                    if item.file:
-                        # Reading the file content
-                        item.file.open("r")
-                        file_content = item.file.read()
-                        content_str += (
-                            f"\nContent of {item.file_name}:\n{file_content}\n"
-                        )
-                        item.file.close()
+                for item in Files.objects.filter(dataset_id=dataset_id):
+                    if not item.file:
+                        continue
+                    filename = Path(item.file.name).name
+                    with item.file.open("rb") as measurement:
+                        if Path(filename).suffix.lower() in {".h5", ".hdf", ".hdf5", ".nxs"}:
+                            archive_name = f"raw/{filename}"
+                            with zip_file.open(archive_name, "w") as archive_file:
+                                copyfileobj(measurement, archive_file)
+                            content_str += f"\nOriginal measurement: {archive_name}\n"
+                        else:
+                            file_content = measurement.read().decode("utf-8", errors="replace")
+                            content_str += f"\nContent of {item.file_name}:\n{file_content}\n"
 
                 zip_file.writestr(f"{dataset_id}_metaData.txt", content_str)
 
@@ -1061,7 +1064,7 @@ def dataset_details_curator(request: HttpRequest, dataset_id: str) -> HttpRespon
                     "\n"
                     "*3. PID..._metaData.txt*\n"
                     "Contains all metadata from this dataset - HUMAN READABLE\n"
-                    "+ content of the original datafile - including the values.\n"
+                    "Text measurements are included here. Binary measurements are in raw/.\n"
                     "\n"
                     "*4. PID..._metadata.hdf5*\n"
                     "Contains all metadata. Format: hdf5 - MACHINE READABLE\n"

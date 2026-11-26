@@ -19,7 +19,20 @@ between the current first-interval check and the proposed near-edge criterion.
 The test will flag an unexpected pass so the expectation can be revisited when
 the criterion changes.
 
-## November 2026 verification evidence
+## KIT deployment candidate
+
+The [KIT verification results](evidence/kit-results.json) document the
+candidate checked on this branch. It includes Sebastian's ESRF linked-channel
+fix and the original H5 fixture. ROCK and ESRF retain the QC values and REVIEW
+verdicts from the KIT review baseline at `53d03e8`. Both Cu₂O submission
+modes returned PASS and matched Frank's calibration. The ESRF curator ZIP
+contains the original H5 file byte for byte.
+
+- [Corrected Cu₂O curator report](evidence/kit-cu2o-run-002-curator.png)
+- [ROCK Mo foil curator report](evidence/kit-rock-mo-curator.png)
+- [ESRF H5 curator report](evidence/kit-esrf-h5-curator.png)
+
+## Earlier November 2026 verification evidence
 
 The [results JSON](evidence/results.json) records the original file hashes, QC
 checks, and both energy shifts. Browser verification used an isolated local
